@@ -1,0 +1,75 @@
+data:
+  loader:
+    name: DALI
+    args:
+      batch_size: 24
+      shuffle: true
+      drop_last: true
+  dataset:
+    name: waymo_motion
+    args:
+      map_normalize: 60.0
+      full_sequence: true
+      occupancy_size: 384
+      filter_future: true
+      signal_features: true
+      roadmap: true
+      roadmap_size: 256
+      use_sdc_frame: true
+      waymo_eval_frame: true
+      heatmap_time: [0, 10]
+      random_heatmap_minmax: [1, 60]
+      random_heatmap_count: 4
+criterion:
+  - name: occupancy_focal
+    args:
+      alpha: 0.75
+model:
+  name: motion-perceiver
+  args:
+    pretrained: 7403233af8c7b2e1009c1aa35a7b0254.pth
+    encoder:
+      version: 6
+      num_latents: 128
+      num_latent_channels: 256
+      input_indicies: [0, 5, 10]
+      detach_latent: true
+      adapter:
+        type: vehicle
+        args:
+          class_onehot: true
+          input_mode: fpos_extra
+          num_frequency_bands: 64
+      signal_ia:
+        type: signal
+        args:
+          onehot: true
+          input_mode: fpos
+          num_frequency_bands: 30
+      roadgraph_ia:
+        type: image
+        args:
+          image_shape: [1, 256, 256]
+          in_channels: 1
+          num_frequency_bands: 16
+          patchify: 32
+          conv_1x1: 190
+    decoder:
+      position_encoding_type: fourier
+      num_frequency_bands: 32
+      residule_query: false
+      adapter:
+        type: heatmap
+        args:
+          num_output_channels: 128
+          image_shape: [384, 384]
+optimizer:
+  name: AdamW
+  args:
+    step_interval: 5
+    lr: 0.001
+scheduler:
+  name: poly
+  args:
+    max_iter: 25
+    power: 0.9
