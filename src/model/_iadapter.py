@@ -13,11 +13,12 @@ from torch import nn, Tensor
 def _debug_plot(tensor: Tensor, figname: str) -> None:
     """Simple function to call when debugging"""
     import cv2
+    import numpy as np
 
-    im = cv2.normalize(
-        tensor.clone().detach().cpu().numpy(), None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U
-    )
-    cv2.imwrite(figname, im)
+    im = tensor.clone().detach().cpu().numpy()
+    im_norm = np.zeros_like(im, dtype=np.uint8)
+    cv2.normalize(im, im_norm, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+    cv2.imwrite(figname, im_norm)
 
 
 def _generate_positions_for_encoding(spatial_shape, v_min=-1.0, v_max=1.0):
@@ -30,7 +31,7 @@ def _generate_positions_for_encoding(spatial_shape, v_min=-1.0, v_max=1.0):
     :return: position coordinates tensor of shape (*shape, len(shape)).
     """
     coords = [torch.linspace(v_min, v_max, steps=s) for s in spatial_shape]
-    return torch.stack(torch.meshgrid(*coords), dim=len(spatial_shape))
+    return torch.stack(torch.meshgrid(*coords, indexing="ij"), dim=len(spatial_shape))
 
 
 def _generate_position_encodings(

@@ -16,6 +16,15 @@ class Occupancy(Statistic):
 
     sort_lambda = {"AUC": max, "IoU": max}
 
+    @classmethod
+    def from_config(cls, buffer_length: int, **kwargs):
+        return cls(
+            kwargs.get("time_idxs", None),
+            kwargs.get("classes", None),
+            buffer_length=buffer_length,
+            reduce_batch=True,
+        )
+
     def __init__(
         self,
         time_idxs: Optional[List[int]] = None,

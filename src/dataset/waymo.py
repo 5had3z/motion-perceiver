@@ -3,7 +3,7 @@ from subprocess import run
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 import math
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from nvidia.dali import pipeline_def, Pipeline
 from nvidia.dali.types import DALIDataType, Constant
@@ -453,6 +453,10 @@ class WaymoDatasetConfig(DatasetConfig):
     @classmethod
     def from_config(cls, config: ExperimentInitConfig):
         return cls(**config.data.dataset.args)
+
+    @property
+    def properties(self) -> Dict[str, Any]:
+        return asdict(self)
 
     def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
         root = {

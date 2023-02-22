@@ -2,7 +2,7 @@ data:
   loader:
     name: DALI
     args:
-      batch_size: 24
+      batch_size: 2
       shuffle: true
       drop_last: true
   dataset:
@@ -49,7 +49,6 @@ model:
       roadgraph_ia:
         type: image
         args:
-          image_shape: [1, 256, 256]
           in_channels: 1
           num_frequency_bands: 16
           patchify: 32
@@ -62,7 +61,6 @@ model:
         type: heatmap
         args:
           num_output_channels: 128
-          image_shape: [384, 384]
 optimizer:
   name: AdamW
   args:

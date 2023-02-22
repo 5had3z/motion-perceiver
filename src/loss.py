@@ -10,7 +10,7 @@ from torch.nn.functional import binary_cross_entropy_with_logits
 from konductor.modules.losses import REGISTRY, LossConfig, ExperimentInitConfig
 
 
-class Occupancy(nn.Module):
+class OccupancyBCE(nn.Module):
     def __init__(self, weight: float = 1.0, pos_weight: float = 1.0) -> None:
         super().__init__()
         self.weight = weight
@@ -18,25 +18,25 @@ class Occupancy(nn.Module):
 
     def forward(
         self, predictions: Dict[str, Any], targets: Dict[str, Tensor]
-    ) -> Tensor:
+    ) -> Dict[str, Tensor]:
         """"""
         loss = binary_cross_entropy_with_logits(
             predictions["heatmap"], targets["heatmap"], pos_weight=self.pos_weight
         )
-        return loss
+        return {"bce": self.weight * loss}
 
 
 @dataclass
-@REGISTRY.register_module("occupancy")
+@REGISTRY.register_module("occupancy_bce")
 class OccupancyLoss(LossConfig):
     pos_weight: float = 1.0
 
     @classmethod
     def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return cls(**config.criterion[idx].args)
+        return cls(**config.criterion[idx].args, names=["bce"])
 
     def get_instance(self) -> Any:
-        return Occupancy(self.weight, self.pos_weight)
+        return OccupancyBCE(self.weight, self.pos_weight)
 
 
 class OccupancyFocal(nn.Module):
@@ -70,13 +70,13 @@ class OccupancyFocal(nn.Module):
 
     def forward(
         self, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
-    ) -> Tensor:
+    ) -> Dict[str, Tensor]:
         """"""
         loss = torch.zeros(1).cuda()
         for idx_, name in enumerate(predictions):
             loss += self._forward_aux(predictions[name], targets["heatmap"][:, idx_])
 
-        return loss
+        return {"focal": self.weight * loss}
 
 
 @dataclass
@@ -88,7 +88,7 @@ class OccupancyFocalLoss(LossConfig):
 
     @classmethod
     def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return cls(**config.criterion[idx].args)
+        return cls(**config.criterion[idx].args, names=["focal"])
 
     def get_instance(self) -> Any:
         return OccupancyFocal(self.weight, self.alpha, self.gamma, self.pos_weight)
