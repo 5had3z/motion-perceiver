@@ -71,3 +71,5 @@ scheduler:
   args:
     max_iter: 25
     power: 0.9
+logger:
+  interval: 500

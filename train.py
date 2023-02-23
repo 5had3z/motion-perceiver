@@ -1,9 +1,9 @@
 from typing import Tuple, Dict, List
 
-from torch import Tensor, nn
+from torch import Tensor, nn, no_grad
 from torch.profiler import record_function
 from konductor.trainer.initialisation import initialise_training
-from konductor.trainer.pytorch import PyTorchTrainer
+from konductor.trainer.pytorch import PyTorchTrainer, PytorchTrainingModules, PerfLogger
 
 import src  # Imports all components into framework
 from src.statistics import Occupancy
@@ -56,9 +56,32 @@ class Trainer(PyTorchTrainer):
 
         return None, pred
 
+    @staticmethod
+    @no_grad()
+    @record_function("statistics")
+    def log_step(
+        logger: PerfLogger,
+        data: List[Dict[str, Tensor]],
+        preds: Dict[str, Tensor] | None,
+        losses: Dict[str, Tensor] | None,
+    ) -> None:
+        """
+        Logging things, statistics should have "losses" tracker, all losses are forwarded
+        to that. If losses are missing logging of them will be skipped (if you don't want
+        to log loss during eval). If predictions are missing then accuracy logging will
+        be skipped (if you don't want to log acc during training)
+        """
+        for statistic in logger.logger_keys:
+            if statistic == "loss" and losses is not None:
+                logger.log(statistic, {k: v.item() for k, v in losses.items()})
+            elif preds is not None:
+                logger.log(statistic, preds, data[0])
+
 
 def main() -> None:
-    trainer = initialise_training(Trainer, {"occupancy": Occupancy})
+    trainer = initialise_training(
+        Trainer, {"occupancy": Occupancy}, PytorchTrainingModules
+    )
     trainer.run_epoch()
 
 

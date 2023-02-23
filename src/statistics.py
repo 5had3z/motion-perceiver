@@ -18,9 +18,16 @@ class Occupancy(Statistic):
 
     @classmethod
     def from_config(cls, buffer_length: int, **kwargs):
+        time_idxs = set()
+        if "random_heatmap_minmax" in kwargs:
+            _min, _max = kwargs["random_heatmap_minmax"]
+            time_idxs.update(set(range(_min, _max + 1)))
+        if "heatmap_time" in kwargs:
+            time_idxs.update(set(kwargs["heatmap_time"]))
+
         return cls(
-            kwargs.get("time_idxs", None),
-            kwargs.get("classes", None),
+            time_idxs=sorted(list(time_idxs)) if len(time_idxs) > 0 else None,
+            classes=kwargs.get("classes", None),
             buffer_length=buffer_length,
             reduce_batch=True,
         )
@@ -97,12 +104,12 @@ class Occupancy(Statistic):
         """Currently assume the same timesteps across batches"""
         for tidx, timestep in enumerate(timesteps[0]):
             self._append_sample(
-                f"{classname}_IoU_{timestep}",
+                f"{classname}IoU_{timestep}",
                 self.calculate_soft_iou(prediction[:, tidx], target[:, tidx]),
             )
 
             self._append_sample(
-                f"{classname}_AUC_{timestep}",
+                f"{classname}AUC_{timestep}",
                 self.calculate_auc(prediction[:, tidx], target[:, tidx]),
             )
 
@@ -118,10 +125,10 @@ class Occupancy(Statistic):
             target = target.squeeze(1)
 
             self._append_sample(
-                f"{classname}_IoU", self.calculate_soft_iou(prediction, target)
+                f"{classname}IoU", self.calculate_soft_iou(prediction, target)
             )
             self._append_sample(
-                f"{classname}_AUC", self.calculate_auc(prediction, target)
+                f"{classname}AUC", self.calculate_auc(prediction, target)
             )
         else:
             self.run_over_timesteps(prediction, target, timesteps, classname)
@@ -137,6 +144,6 @@ class Occupancy(Statistic):
                 prediction,
                 target,
                 targets["time_idx"],
-                f"_{name}" if name != "heatmap" else "",
+                f"{name}_" if name != "heatmap" else "",
             )
         self._end_idx += 1
