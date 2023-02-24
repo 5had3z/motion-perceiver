@@ -2,8 +2,14 @@ from typing import Tuple, Dict, List
 
 from torch import Tensor, nn, no_grad
 from torch.profiler import record_function
-from konductor.trainer.initialisation import initialise_training
-from konductor.trainer.pytorch import PyTorchTrainer, PytorchTrainingModules, PerfLogger
+from konductor.trainer.pbar import pbar_wrapper
+from konductor.trainer.initialisation import get_training_parser, initialise_training
+from konductor.trainer.pytorch import (
+    PyTorchTrainer,
+    PytorchTrainingModules,
+    PerfLogger,
+    TrainingMangerConfig,
+)
 
 import src  # Imports all components into framework
 from src.statistics import Occupancy
@@ -79,8 +85,18 @@ class Trainer(PyTorchTrainer):
 
 
 def main() -> None:
+    cli_parser = get_training_parser()
+    cli_parser.add_argument("--pbar", action="store_true")
+    cli_args = cli_parser.parse_args()
+    trainer_config = TrainingMangerConfig()
+    if cli_args.pbar:
+        trainer_config.pbar = pbar_wrapper
     trainer = initialise_training(
-        Trainer, {"occupancy": Occupancy}, PytorchTrainingModules
+        cli_args,
+        Trainer,
+        trainer_config,
+        {"occupancy": Occupancy},
+        PytorchTrainingModules,
     )
     trainer.run_epoch()
 
