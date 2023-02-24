@@ -39,7 +39,7 @@ class Trainer(PyTorchTrainer):
             for criterion in criterions:
                 losses.update(criterion(pred, data))
 
-        return losses, pred
+        return losses, None
 
     @staticmethod
     def val_step(

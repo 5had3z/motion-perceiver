@@ -1,6 +1,7 @@
 """ 
 General AP Statistics for Occupancy Heatmap
 """
+from pathlib import Path
 from itertools import product
 from typing import Dict, List, Optional
 
@@ -17,7 +18,7 @@ class Occupancy(Statistic):
     sort_lambda = {"AUC": max, "IoU": max}
 
     @classmethod
-    def from_config(cls, buffer_length: int, **kwargs):
+    def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
         time_idxs = set()
         if "random_heatmap_minmax" in kwargs:
             _min, _max = kwargs["random_heatmap_minmax"]
@@ -29,6 +30,7 @@ class Occupancy(Statistic):
             time_idxs=sorted(list(time_idxs)) if len(time_idxs) > 0 else None,
             classes=kwargs.get("classes", None),
             buffer_length=buffer_length,
+            writepath=writepath,
             reduce_batch=True,
         )
 
@@ -134,9 +136,10 @@ class Occupancy(Statistic):
             self.run_over_timesteps(prediction, target, timesteps, classname)
 
     def __call__(
-        self, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
+        self, it: int, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
     ) -> None:
         """"""
+        super().__call__(it)
         for idx_, name in enumerate(predictions):
             prediction = predictions[name]
             target = targets["heatmap"][:, idx_]
@@ -146,4 +149,3 @@ class Occupancy(Statistic):
                 targets["time_idx"],
                 f"{name}_" if name != "heatmap" else "",
             )
-        self._end_idx += 1
