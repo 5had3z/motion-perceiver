@@ -94,6 +94,9 @@ class Occupancy(Statistic):
         tpr = tpr.transpose(1, 0)
         fpr = fpr.transpose(1, 0)
 
+        # handle nans by setting to 1, if there is no tp in gt then tpr has to be 1
+        tpr[np.isnan(tpr)] = 1
+
         batch_auc = np.empty((target.shape[0]))
         for b_idx, b_tpr, b_fpr in zip(range(target.shape[0]), tpr, fpr):
             batch_auc[b_idx] = integrate.cumulative_trapezoid(b_tpr, b_fpr)[-1]

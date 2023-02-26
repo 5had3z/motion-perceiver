@@ -456,7 +456,10 @@ class WaymoDatasetConfig(DatasetConfig):
 
     @property
     def properties(self) -> Dict[str, Any]:
-        return asdict(self)
+        props = asdict(self)
+        if self.separate_classes:
+            props["classes"] = ["vehicles", "pedestrains", "cyclists"]
+        return props
 
     def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
         root = {

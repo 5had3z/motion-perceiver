@@ -2,12 +2,12 @@
 """
 from __future__ import annotations
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum, auto
 from multiprocessing import get_context, Queue
 from pathlib import Path
 from subprocess import run
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from warnings import warn
 from xml.etree import ElementTree
 
@@ -19,7 +19,14 @@ try:
 except ImportError:
     warn("Cannot import tensorflow, but only required for data export")
 
-from nvidia.dali import pipeline_def
+from konductor.modules.data import (
+    DATASET_REGISTRY,
+    DatasetConfig,
+    ExperimentInitConfig,
+    Mode,
+)
+
+from nvidia.dali import pipeline_def, Pipeline
 from nvidia.dali.types import DALIDataType
 import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
@@ -213,6 +220,53 @@ def interation_pipeline(
         )
 
     return tuple([o.gpu() for o in outputs])
+
+
+@dataclass
+@DATASET_REGISTRY.register_module("interacton")
+class InteractionConfig(DatasetConfig):
+    full_sequence: bool = False
+    vehicle_features: List[str] | None = None
+    road_features: bool = False
+    roadmap: bool = False
+    signal_features: bool = False
+    map_normalize: float = 0.0
+    occupancy_size: int = 0
+    heatmap_time: List[int] | None = None
+    filter_future: bool = True
+    separate_classes: bool = False
+    random_heatmap_minmax: Tuple[int, int] | None = None
+    random_heatmap_count: int = 0
+
+    @classmethod
+    def from_config(cls, config: ExperimentInitConfig):
+        return cls(**config.data.dataset.args)
+
+    @property
+    def properties(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
+        root = {
+            Mode.train: self.basepath / "training",
+            Mode.val: self.basepath / "validation",
+            Mode.test: self.basepath / "testing",
+        }[mode]
+
+        pipe_kwargs = asdict(self)
+        del pipe_kwargs["basepath"]
+
+        output_map = ["agents", "agents_valid"]
+        if self.road_features:
+            output_map.extend(["roadgraph", "roadgraph_valid"])
+        if self.roadmap:
+            output_map.append("roadmap")
+        if self.signal_features:
+            output_map.extend(["signals", "signals_valid"])
+        if self.occupancy_size > 0:
+            output_map.extend(["heatmap", "time_idx"])
+
+        return interation_pipeline(root, **pipe_kwargs, **kwargs), output_map, root.stem
 
 
 class IClass(Enum):
