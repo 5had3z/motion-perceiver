@@ -3,7 +3,6 @@
 #include <type_traits>
 #include <unordered_map>
 
-#include <eigen3/Eigen/Dense>
 #include <opencv2/imgproc.hpp>
 
 namespace roadgraphop
