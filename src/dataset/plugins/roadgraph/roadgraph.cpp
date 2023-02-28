@@ -89,132 +89,6 @@ bool isOtherType(FeatureType x)
     }
 }
 
-constexpr inline unsigned int factorial(unsigned int f)
-{
-    auto ret = 1;
-    while (f > 0)
-    {
-        ret *= f;
-        --f;
-    }
-    return ret;
-}
-
-inline float nchoosek(int n, int k)
-{
-    return factorial(n) / (factorial(n - k) * factorial(k));
-}
-
-template <std::size_t degree>
-std::array<std::pair<float, float>, degree> bezierFit(std::vector<std::pair<float, float>> points)
-{
-    Eigen::Matrix<float, -1, degree> G(points.size());
-    auto t = Eigen::VectorXf::LinSpaced(points.size(), 0, 1);
-
-    for (std::size_t i = 0; i < degree; ++i)
-    {
-        G.row(i) = nchoosek(degree, i) * (1 - t.array()).array().pow(degree - i).array() * t.pow(i).array();
-    }
-
-    Eigen::Matrix<float, -1, degree> D(points.size());
-    for (std::size_t i = 0; i < points.size(); ++i)
-    {
-        D(i, 0) = points[i].first;
-        D(i, 1) = points[i].second;
-    }
-
-    auto GtD = G.transpose() * D;
-    auto GtG = G.transpose() * G;
-    auto B = GtG.ldlt().solve(GtD);
-
-    std::array<std::pair<float, float>, degree> ret;
-    for (std::size_t i = 0; i < degree; ++i)
-    {
-        ret[i].first = B(i, 0);
-        ret[i].second = B(i, 1);
-    }
-
-    return ret;
-}
-
-/**
- * @brief Currently just handles lanecenter
- */
-void createRoadGraphFeatures(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor, ConstDaliTensor idTensor,
-    ConstDaliTensor validTensor, float center_x, float center_y, float normalisaiton, DaliTensor dataTensor,
-    DaliTensor maskTensor)
-{
-    std::unordered_map<int64_t, std::vector<std::pair<float, float>>> roadpoints;
-    const auto maxIdx = xyzTensor.shape()[0];
-
-    const float* positionPtr = xyzTensor.data<float>();
-    const int64_t* typePtr = typeTensor.data<int64_t>();
-    const int64_t* idPtr = typeTensor.data<int64_t>();
-    const int64_t* validPtr = validTensor.data<int64_t>();
-
-    for (std::size_t idx = 0; idx < maxIdx; ++idx)
-    {
-        if (!validPtr[idx])
-            continue;
-
-        if (!isLaneCenterType(static_cast<FeatureType>(typePtr[idx])))
-            continue;
-
-        const int64_t id = idPtr[idx];
-        auto it = roadpoints.find(id);
-        if (it == roadpoints.end())
-        {
-            roadpoints[id] = std::vector<std::pair<float, float>>();
-            roadpoints[id].reserve(64);
-        }
-        roadpoints[id].emplace_back(positionPtr[3 * idx + 0], positionPtr[3 * idx + 1]);
-    }
-
-    const auto sum_elements = std::accumulate(
-        roadpoints.begin(), roadpoints.end(), 0, [](const auto& acc, const auto& e) { return acc + e.second.size(); });
-
-    if (sum_elements > 0)
-    {
-        std::cout << "number of splines found: " << std::to_string(roadpoints.size()) << " with average num elements "
-                  << std::to_string(sum_elements / roadpoints.size()) << std::endl;
-    }
-    else
-    {
-        std::cout << "NO SPLINES FOUND IN SAMPLE" << std::endl;
-    }
-}
-
-template <>
-void RoadGraphTokens<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
-{
-    const auto& xyzTensor = ws.Input<::dali::CPUBackend>(0);
-    const auto& typeTensor = ws.Input<::dali::CPUBackend>(1);
-    const auto& idTensor = ws.Input<::dali::CPUBackend>(2);
-    const auto& validTensor = ws.Input<::dali::CPUBackend>(3);
-    const auto& centerXTensor = ws.Input<::dali::CPUBackend>(4);
-    const auto& centerYTensor = ws.Input<::dali::CPUBackend>(5);
-
-    auto& outDataTensor = ws.Output<::dali::CPUBackend>(0);
-    auto& outMaskTensor = ws.Output<::dali::CPUBackend>(1);
-
-    auto& tPool = ws.GetThreadPool();
-    const auto& inShape = xyzTensor.shape();
-
-    for (int sampleId = 0; sampleId < inShape.num_samples(); ++sampleId)
-    {
-        tPool.AddWork(
-            [&, sampleId](int thread_id)
-            {
-                const float center_x = centerXTensor[sampleId].data<float>()[0];
-                const float center_y = centerYTensor[sampleId].data<float>()[0];
-                createRoadGraphFeatures(xyzTensor[sampleId], typeTensor[sampleId], idTensor[sampleId],
-                    validTensor[sampleId], center_x, center_y, mNormalizeFactor, outDataTensor[sampleId],
-                    outMaskTensor[sampleId]);
-            });
-    }
-    tPool.RunAll();
-}
-
 /**
  * @brief Roadgraph index is a valid lanecenter point
  * @param[in] valid int64_t roadgraph_samples/valid
@@ -266,10 +140,8 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
         int norm_x = (rot_x / normalisaiton + 1.f) * outputDims[2] / 2.f;
 
         // transform to waymo frame if required
-        // constexpr float frame_offset = 3.f / 8.f; // for 384
-        // constexpr float frame_offset = 1.f / 4.f; // for 512
-        constexpr float frame_offset = 1.f / 2.f; // for 256
-        int norm_y = waymoEvalFrame ? (-rot_y / normalisaiton + 1.f + frame_offset) * outputDims[1] / 2.f
+        constexpr int frame_offset = 64;
+        int norm_y = waymoEvalFrame ? (-rot_y / normalisaiton + 1.f) * outputDims[1] / 2.f + frame_offset
                                     : (rot_y / normalisaiton + 1.f) * outputDims[1] / 2.f;
 
         return cv::Point2i{norm_x, norm_y};
@@ -331,17 +203,6 @@ void RoadGraphImage<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
 }
 
 } // namespace roadgraphop
-
-DALI_REGISTER_OPERATOR(RoadgraphTokens, ::roadgraphop::RoadGraphTokens<::dali::CPUBackend>, ::dali::CPU);
-
-DALI_SCHEMA(RoadgraphTokens)
-    .DocStr("Generates tensor that represents road features from waymo format")
-    .NumInput(7)
-    .NumOutput(2)
-    .AddArg("max_features", "Maximum number of roadgraph features", ::dali::DALIDataType::DALI_INT64)
-    .AddArg("n_samples", "Number of features that parameterrise the roadgraph", ::dali::DALIDataType::DALI_INT64)
-    .AddArg("normalize_value", "Normalisation factor for x,y coords", ::dali::DALIDataType::DALI_FLOAT)
-    .AddArg("lane_center", "output lane center features", ::dali::DALIDataType::DALI_BOOL);
 
 DALI_REGISTER_OPERATOR(RoadgraphImage, ::roadgraphop::RoadGraphImage<::dali::CPUBackend>, ::dali::CPU);
 

@@ -51,7 +51,6 @@ def waymo_motion_pipe(
     random_shuffle: bool,
     full_sequence: bool = False,
     vehicle_features: List[str] | None = None,
-    road_features: bool = False,
     roadmap: bool = False,
     signal_features: bool = False,
     map_normalize: float = 0.0,
@@ -287,37 +286,6 @@ def waymo_motion_pipe(
 
     outputs = [fn.stack(*[data[k] for k in vehicle_features], axis=2), data["valid"]]
 
-    # roadgraph into tensors [id, [x,y,type]] and [id, [valid]]
-    if road_features:
-        outputs.extend(
-            fn.roadgraph_tokens(
-                inputs[f"roadgraph_samples/xyz"],
-                inputs[f"roadgraph_samples/type"],
-                inputs[f"roadgraph_samples/id"],
-                inputs[f"roadgraph_samples/valid"],
-                center_x,
-                center_y,
-                rot_angle,
-                max_features=256,
-                n_samples=6,
-                normalize_value=map_normalize,
-                lane_center=True,
-            )
-        )
-        # outputs.extend(
-        #     [
-        #         fn.cat(
-        #             inputs[f"roadgraph_samples/xyz"],
-        #             fn.cast(
-        #                 inputs[f"roadgraph_samples/type"], dtype=DALIDataType.FLOAT
-        #             ),
-        #             fn.cast(inputs[f"roadgraph_samples/id"], dtype=DALIDataType.FLOAT),
-        #             axis=1,
-        #         ),
-        #         inputs[f"roadgraph_samples/valid"],
-        #     ]
-        # )
-
     # roadmap into image
     if roadmap:
         outputs.append(
@@ -435,7 +403,6 @@ def waymo_motion_pipe(
 class WaymoDatasetConfig(DatasetConfig):
     full_sequence: bool = False
     vehicle_features: List[str] | None = None
-    road_features: bool = False
     roadmap: bool = False
     signal_features: bool = False
     map_normalize: float = 0.0
@@ -472,8 +439,6 @@ class WaymoDatasetConfig(DatasetConfig):
         del pipe_kwargs["basepath"]
 
         output_map = ["agents", "agents_valid"]
-        if self.road_features:
-            output_map.extend(["roadgraph", "roadgraph_valid"])
         if self.roadmap:
             output_map.append("roadmap")
         if self.signal_features:
