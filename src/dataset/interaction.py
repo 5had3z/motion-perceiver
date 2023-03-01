@@ -19,12 +19,7 @@ try:
 except ImportError:
     warn("Cannot import tensorflow, but only required for data export")
 
-from konductor.modules.data import (
-    DATASET_REGISTRY,
-    DatasetConfig,
-    ExperimentInitConfig,
-    Mode,
-)
+from konductor.modules.data import DATASET_REGISTRY, DatasetConfig, Mode
 
 from nvidia.dali import pipeline_def, Pipeline
 from nvidia.dali.types import DALIDataType
@@ -237,10 +232,6 @@ class InteractionConfig(DatasetConfig):
     separate_classes: bool = False
     random_heatmap_minmax: Tuple[int, int] | None = None
     random_heatmap_count: int = 0
-
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig):
-        return cls(**config.data.dataset.args)
 
     @property
     def properties(self) -> Dict[str, Any]:

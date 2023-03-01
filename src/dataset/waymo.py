@@ -11,12 +11,7 @@ import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
 
-from konductor.modules.data import (
-    DATASET_REGISTRY,
-    DatasetConfig,
-    ExperimentInitConfig,
-    Mode,
-)
+from konductor.modules.data import DATASET_REGISTRY, DatasetConfig, Mode
 
 
 def _cache_record_idx(dataset_path: Path) -> Path:
@@ -417,10 +412,6 @@ class WaymoDatasetConfig(DatasetConfig):
     waymo_eval_frame: bool = False
     roadmap_size: int | None = None
 
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig):
-        return cls(**config.data.dataset.args)
-
     @property
     def properties(self) -> Dict[str, Any]:
         props = asdict(self)
@@ -436,7 +427,9 @@ class WaymoDatasetConfig(DatasetConfig):
         }[mode]
 
         pipe_kwargs = asdict(self)
-        del pipe_kwargs["basepath"]
+        for kw in ["basepath", "train_loader", "val_loader"]:
+            # Remove super kwargs
+            del pipe_kwargs[kw]
 
         output_map = ["agents", "agents_valid"]
         if self.roadmap:

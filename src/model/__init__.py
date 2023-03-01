@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from konductor.modules.models import MODEL_REGISTRY, ExperimentInitConfig, DatasetConfig
+from konductor.modules.data import get_dataset_properties
+from konductor.modules.models import MODEL_REGISTRY, ExperimentInitConfig
 from konductor.modules.models._pytorch import TorchModelConfig
 
 from .motion_perceiver import MotionPerceiver
@@ -14,18 +15,19 @@ class MotionPerceiverConfig(TorchModelConfig):
     decoder: Dict[str, Any]
 
     @classmethod
-    def from_config(
-        cls, config: ExperimentInitConfig, dataset_config: DatasetConfig
-    ) -> Any:
-        if "roadmap_size" in dataset_config.properties:
-            sz = dataset_config.properties["roadmap_size"]
+    def from_config(cls, config: ExperimentInitConfig, idx: int = 0) -> Any:
+        props = get_dataset_properties(config)
+        model_cfg = config.model[idx].args
+
+        if "roadmap_size" in props:
+            sz = props["roadmap_size"]
             sz = [1, sz, sz]
-            config.model.args["encoder"]["roadgraph_ia"]["args"]["image_shape"] = sz
+            model_cfg["encoder"]["roadgraph_ia"]["args"]["image_shape"] = sz
 
-        sz = dataset_config.properties["occupancy_size"]
-        config.model.args["decoder"]["adapter"]["args"]["image_shape"] = [sz, sz]
+        sz = props["occupancy_size"]
+        model_cfg["decoder"]["adapter"]["args"]["image_shape"] = [sz, sz]
 
-        return cls(**config.model.args)
+        return super().from_config(config)
 
     def get_instance(self, *args, **kwargs) -> Any:
-        return self.apply_extra(MotionPerceiver(self.encoder, self.decoder))
+        return self._apply_extra(MotionPerceiver(self.encoder, self.decoder))

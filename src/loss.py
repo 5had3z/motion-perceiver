@@ -1,13 +1,14 @@
 """Loss function and utilities for occupancy prediction for heatmap
 """
 from typing import Any, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 import torch
 from torch import nn, Tensor
 from torch.nn.functional import binary_cross_entropy_with_logits
 
 from konductor.modules.losses import REGISTRY, LossConfig, ExperimentInitConfig
+from konductor.modules.init import ModuleInitConfig
 
 
 class OccupancyBCE(nn.Module):
@@ -33,10 +34,12 @@ class OccupancyLoss(LossConfig):
 
     @classmethod
     def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return cls(**config.criterion[idx].args, names=["bce"])
+        return super().from_config(config, idx, names=["bce"])
 
     def get_instance(self) -> Any:
-        return OccupancyBCE(self.weight, self.pos_weight)
+        kwargs = asdict(self)
+        del kwargs["names"]
+        return OccupancyBCE(**kwargs)
 
 
 class OccupancyFocal(nn.Module):
@@ -88,7 +91,9 @@ class OccupancyFocalLoss(LossConfig):
 
     @classmethod
     def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return cls(**config.criterion[idx].args, names=["focal"])
+        return super().from_config(config, idx, names=["focal"])
 
     def get_instance(self) -> Any:
-        return OccupancyFocal(self.weight, self.alpha, self.gamma, self.pos_weight)
+        kwargs = asdict(self)
+        del kwargs["names"]
+        return OccupancyFocal(**kwargs)
