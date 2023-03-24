@@ -132,16 +132,15 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
         y -= center_y;
 
         // Rotate the point around origin
-        float rot_x = std::cos(rotation) * x - std::sin(rotation) * y;
-        float rot_y = std::sin(rotation) * x + std::cos(rotation) * y;
+        const float rot_x = std::cos(rotation) * x - std::sin(rotation) * y;
+        const float rot_y = std::sin(rotation) * x + std::cos(rotation) * y;
 
         // normalize to image
-        int norm_x = (rot_x / normalisaiton + 1.f) * outputDims[2] / 2.f;
+        const int norm_x = (rot_x / normalisaiton + 1.f) * outputDims[2] / 2.f;
 
-        // transform to waymo frame if required
-        constexpr int frame_offset = 64;
-        int norm_y = waymoEvalFrame ? (-rot_y / normalisaiton + 1.f) * outputDims[1] / 2.f + frame_offset
-                                    : (rot_y / normalisaiton + 1.f) * outputDims[1] / 2.f;
+        // transform to waymo frame if required which has a 20m offset and flipped direction
+        const int norm_y = waymoEvalFrame ? ((20.f - rot_y) / normalisaiton + 1.f) * outputDims[1] / 2.f
+                                          : (rot_y / normalisaiton + 1.f) * outputDims[1] / 2.f;
 
         return cv::Point2i{norm_x, norm_y};
     };

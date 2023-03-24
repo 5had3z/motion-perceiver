@@ -8,7 +8,7 @@ from torch import Tensor
 from matplotlib import pyplot as plt
 
 
-def visualize_sequence(data: Dict[str, Tensor]) -> None:
+def sequence(data: Dict[str, Tensor]) -> None:
     """Plot world-lines of instances and heatmap at chosen keyframe"""
 
     for i, (heatmap, bt_idx) in enumerate(zip(data["heatmap"], data["time_idx"])):
@@ -67,7 +67,7 @@ def pose_to_poly(pose_data: np.ndarray) -> np.ndarray:
     return rot_mat @ bbox + pose_data[1:3, None]
 
 
-def occupancy_image(
+def render_occupancy(
     sample_data: Tensor, scale: float = 1.0, padding: float = 40.0
 ) -> np.ndarray:
     """
@@ -101,14 +101,12 @@ def occupancy_image(
     return occupancy_map
 
 
-def visualise_occupancy_map(data: Dict[str, Tensor]) -> None:
-    """"""
-
+def occupancy_from_current_pose(data: Dict[str, Tensor]) -> None:
+    """Requires loading of raw waymo tf data i.e. raw "current" frame"""
     for i, state_ in enumerate(data["current"]):
         valid_mask = state_[..., 0] != 0
         valid_data = state_[valid_mask]
-        occ = occupancy_image(valid_data)
-
+        occ = render_occupancy(valid_data)
         plt.figure(f"occupancy_{i}", figsize=(20, 20))
         # invert y so min-y is bottom of the image to match scatter plot
         occ = cv2.flip(occ, 0)
@@ -117,7 +115,7 @@ def visualise_occupancy_map(data: Dict[str, Tensor]) -> None:
         plt.savefig(f"occupancy_{i}.png")
 
 
-def visualise_roadgraph(roadgraph: Tensor, valid_mask: Tensor) -> None:
+def roadgraph(roadgraph: Tensor, valid_mask: Tensor) -> None:
     """Plot roadgraph segments from raw data"""
 
     for idx, (rg, mask) in enumerate(zip(roadgraph, valid_mask)):
@@ -145,9 +143,8 @@ def visualise_roadgraph(roadgraph: Tensor, valid_mask: Tensor) -> None:
         plt.close(figname)
 
 
-def visualise_roadmap(roadmap: Tensor) -> None:
+def roadmap(roadmap: Tensor) -> None:
     """Visualise the roadmap image"""
-
     for idx, im in enumerate(roadmap):
         figname = f"lanecenter_image_{idx}"
         plt.figure(figname, figsize=(20, 20))
@@ -168,7 +165,7 @@ def render_signals(signals: np.ndarray, im_shape) -> np.ndarray:
     return signal_image
 
 
-def overlay_roadmap_and_occupancy(
+def roadmap_and_occupancy(
     roadmaps: Tensor, occupancies: Tensor, signals: Tensor
 ) -> None:
     """Overlay both occupancy and roadmap image to ensure they're synchronised"""
@@ -179,15 +176,18 @@ def overlay_roadmap_and_occupancy(
     for bidx, (roadmap, occupancy_vec, signal) in enumerate(
         zip(roadmaps, occupancies, signals)
     ):
-        signal_map = render_signals(signal, roadmap.shape[-2:])
+        signal_map = render_signals(signal, occupancy_vec.shape[-2:])
+        roadmap = cv2.resize(
+            roadmap[0], occupancy_vec.shape[-2:], interpolation=cv2.INTER_LINEAR
+        )
         for tidx, occupancy in enumerate(occupancy_vec[0]):
             figname = f"occupancy_roadimg_{bidx}_{tidx}"
-            plt.figure(figname, figsize=(20, 20))
-            img = np.stack([roadmap[0], occupancy, signal_map], axis=-1)
+            plt.figure(figname, figsize=(10, 10))
+            img = np.stack([roadmap, occupancy, signal_map], axis=-1)
             if tidx == 1:  # SDC Target Frame
                 img = cv2.drawMarker(
                     img,
-                    (128, 192),
+                    (img.shape[0] // 2, img.shape[1] // 2 + 64),
                     (1, 1, 1),
                     cv2.MARKER_TILTED_CROSS,
                     markerSize=6,

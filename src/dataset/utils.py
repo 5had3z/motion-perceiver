@@ -1,114 +1,14 @@
-from pathlib import Path
-from typing import Any, Dict
-import os
+"""
+Extra utilities for calculating the maximum map size and 
+the percentage of vehicles in the scene occluded
+"""
+from typing import Dict
 
-from easydict import EasyDict
-from nvidia.dali.plugin.pytorch import DALIGenericIterator
 import torch
+from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 
-from nnet_training.utilities import comm
-
-try:
-    from .waymo import waymo_motion_pipe
-    from .interaction import interation_pipeline
-    from . import visualisation as mv
-except ImportError:
-    from waymo import waymo_motion_pipe
-    from interaction import interation_pipeline
-    import visualisation as mv
-
-
-def get_dali_dataloader(
-    dataset_config: EasyDict, num_threads: int, val_only: bool = False
-) -> Dict[str, DALIGenericIterator]:
-    """Return DALIGenericIterator for as Dataloader, mostly used for tf.Record datasets"""
-    pipe_kwargs = {
-        "shard_id": comm.get_rank(),
-        "num_shards": comm.get_world_size(),
-        "num_threads": num_threads,
-        "device_id": torch.cuda.current_device(),
-        "batch_size": dataset_config.batch_size // comm.get_world_size(),
-    }
-
-    dataset_name = dataset_config.type.lower()
-    if dataset_name == "waymo_motion":
-        waymo_root = Path(os.environ.get("DATA_PATH", "/data"))
-        pipes = [
-            waymo_motion_pipe(
-                record_root=waymo_root / "validation",
-                random_shuffle=False,
-                **pipe_kwargs,
-                **dataset_config.args,
-            )
-        ]
-        reader_names = ["waymo_validation"]
-        if not val_only:
-            pipes.append(
-                waymo_motion_pipe(
-                    record_root=waymo_root / "training",
-                    random_shuffle=dataset_config.shuffle,
-                    **pipe_kwargs,
-                    **dataset_config.args,
-                )
-            )
-            reader_names.append("waymo_training")
-
-        output_map = ["agents", "agents_valid"]
-        if dataset_config.args.get("road_features", False):
-            output_map.extend(["roadgraph", "roadgraph_valid"])
-        if dataset_config.args.get("roadmap", False):
-            output_map.append("roadmap")
-        if dataset_config.args.get("signal_features", False):
-            output_map.extend(["signals", "signals_valid"])
-        if dataset_config.args.get("occupancy_size", 0) > 0:
-            output_map.extend(["heatmap", "time_idx"])
-        if dataset_config.args.get("scenario_id", False):
-            output_map.append("scenario_id")
-
-    elif dataset_name == "interaction":
-        interaction_root = (
-            Path(os.environ.get("INTERACTION_PATH", "/data")) / "tfrecord"
-        )
-        pipes = [
-            interation_pipeline(
-                record_file=interaction_root / "interaction_val.tfrecord",
-                random_shuffle=False,
-                **pipe_kwargs,
-                **dataset_config.args,
-            )
-        ]
-        reader_names = ["interaction_val"]
-        if not val_only:
-            pipes.append(
-                interation_pipeline(
-                    record_file=interaction_root / "interaction_train.tfrecord",
-                    random_shuffle=dataset_config.shuffle,
-                    **pipe_kwargs,
-                    **dataset_config.args,
-                )
-            )
-            reader_names.append("interaction_train")
-
-        output_map = ["agents", "agents_valid"]
-        if dataset_config.args.get("roadmap", False):
-            output_map.append("roadmap")
-        if dataset_config.args.get("occupancy_size", 0) > 0:
-            output_map.extend(["heatmap", "time_idx"])
-    else:
-        raise NotImplementedError(dataset_name)
-
-    dataloaders = {}
-    for pipe, rname, name in zip(pipes, reader_names, ["Validation", "Training"]):
-        pipe.build()
-        dataloaders[name] = DALIGenericIterator(
-            pipe, output_map, reader_name=rname, auto_reset=True
-        )
-
-    return dataloaders
-
-
-def check_maximum_map_size(dataloaders) -> None:
+def check_maximum_map_size(dataloaders: Dict[str, DALIGenericIterator]) -> None:
     """
     Determine the maximum map size for waymo motion.
     This is required for calibration of the output map.
@@ -148,8 +48,8 @@ def check_maximum_map_size(dataloaders) -> None:
                 y_min = filt[..., 1].min(dim=-1)[0]
 
                 # Find range
-                max_x_range = max((x_max - x_min).max(), max_x_range)
-                max_y_range = max((y_max - y_min).max(), max_y_range)
+                max_x_range = torch.max((x_max - x_min).max(), max_x_range)
+                max_y_range = torch.max((y_max - y_min).max(), max_y_range)
                 pbar.update(1)
                 pbar.set_description(
                     f"max map size {max_x_range:.1f}x{max_y_range:.1f}", refresh=True
@@ -157,7 +57,7 @@ def check_maximum_map_size(dataloaders) -> None:
 
 
 def evaluate_vehicle_occulsions(
-    dataloaders: Dict[str, Any], max_samples: int = 0
+    dataloaders: Dict[str, DALIGenericIterator], max_samples: int = 0
 ) -> None:
     """Determine the percentage of observed vehciles remaining at later timesteps"""
     from tqdm.auto import tqdm
@@ -211,52 +111,3 @@ def evaluate_vehicle_occulsions(
     plt.ylabel("% Agents Observed")
     plt.tight_layout()
     plt.savefig("waymo_agent_decay.png")
-
-
-def test_dali_loader() -> None:
-    """Yield some data"""
-
-    loader_config = {
-        "type": "waymo_motion",
-        "batch_size": 4,
-        "shuffle": True,
-        "drop_last": True,
-        "n_workers": 8,
-        "args": {
-            "map_normalize": 40.0,
-            "full_sequence": True,
-            "occupancy_size": 256,
-            "heatmap_time": list(range(0, 91, 10)),
-            "filter_future": True,
-            # "separate_classes": True,
-            # "random_heatmap_count": 4,
-            # "random_heatmap_minmax": [1, 40],
-            "signal_features": True,
-            "roadmap": True,
-            "use_sdc_frame": True,
-            "waymo_eval_frame": True,
-        },
-    }
-
-    loaders = get_dali_dataloader(loader_config, num_threads=loader_config["n_workers"])
-
-    # evaluate_vehicle_occulsions(loaders, 0)
-    # return
-
-    # check_maximum_map_size(loaders)
-    # return
-
-    for data in loaders["Validation"]:
-        data: Dict[str, torch.Tensor] = data[0]  # remove list dim
-        # visualise_roadgraph(data["roadgraph"], data["roadgraph_valid"])
-        # mv.visualise_roadmap(data["roadmap"])
-        # mv.overlay_roadmap_and_occupancy(
-        #     data["roadmap"], data["heatmap"], data["signals"]
-        # )
-        mv.visualize_sequence(data)
-        # visualise_occupancy_map(data)
-        break
-
-
-if __name__ == "__main__":
-    test_dali_loader()

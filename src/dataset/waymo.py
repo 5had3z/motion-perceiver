@@ -247,9 +247,7 @@ def waymo_motion_pipe(
             # flip y
             data["velocity_y"] *= -1
             data["y"] *= -1
-            data["y"] += 1 / 2  # for 256
-            # data["y"] += 1 / 4 # for 512
-            # data["y"] += 3 / 8 # for 384
+            data["y"] += 128 / occupancy_size
 
         # x and y are less than 1
         data["valid"] = (
@@ -340,9 +338,7 @@ def waymo_motion_pipe(
 
             if waymo_eval_frame:
                 signal_y *= -1  # flip y
-                signal_y += 1 / 2  # for 256
-                # signal_y += 1 / 4 # for 512
-                # signal_y += 3 / 8 # for 384
+                signal_y += 128 / occupancy_size
 
             # Signals must be in map roi
             signal_valid = (
