@@ -512,6 +512,90 @@ class MotionEncoder3Ctx(MotionEncoder3):
         return out_latent
 
 
+class MotionEncodeer3CtxDetach(MotionEncoder3Ctx):
+    """Detach after every time step during training
+    to increase training throughput with little penalty"""
+
+    def forward(
+        self,
+        output_idx: Tensor,
+        agents: Tensor,
+        agents_mask: Tensor,
+        roadgraph: Tensor | None = None,
+        roadgraph_mask: Tensor | None = None,
+        signals: Tensor | None = None,
+        signals_mask: Tensor | None = None,
+    ) -> List[Tensor]:
+        # repeat initial latent vector along batch dimension
+        x_latent: Tensor = einops.repeat(self.latent, "... -> b ...", b=agents.shape[1])
+
+        max_idx = int(output_idx.max().item()) + 1
+        min_idx = min(self.input_indicies)
+        out_latent = []
+
+        if self.roadgraph_encoder is not None:
+            enc_roadgraph = self.roadgraph_encoder(roadgraph)
+            if roadgraph_mask is None:
+                roadgraph_mask = torch.ones(
+                    enc_roadgraph.shape[:-1], device=enc_roadgraph.device
+                )
+
+        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_latent = self.input_layer(x_latent, x_adapt, x_mask)
+
+        if min_idx in output_idx:
+            out_latent.append(x_latent)
+            if self.detach_latent and self.training:
+                x_latent = x_latent.detach().clone()
+
+        input_indicies = self.input_indicies
+        if self.random_input_indicies > 0 and self.training:
+            candidates = list(range(min(input_indicies), max(input_indicies)))
+            random.shuffle(candidates)
+            input_indicies.update(candidates[: self.random_input_indicies])
+
+        for t_idx in range(min_idx + 1, max_idx):
+            if t_idx in output_idx:
+                x_latent = self.propagate_layer(x_latent)
+                if t_idx in input_indicies:
+                    x_adapt, x_mask = self.input_adapter(
+                        agents[t_idx], agents_mask[t_idx]
+                    )
+                    x_latent = self.update_layer(x_latent, x_adapt, x_mask)
+                    if self.signal_encoder is not None:
+                        s_adapt, s_mask = self.signal_encoder(
+                            signals[t_idx], signals_mask[t_idx]
+                        )
+                        x_latent = self.signal_attn(x_latent, s_adapt, s_mask)
+                if self.road_attn is not None:
+                    x_latent = self.road_attn(x_latent, enc_roadgraph, roadgraph_mask)
+
+                out_latent.append(x_latent)
+                if self.detach_latent and self.training:
+                    x_latent = x_latent.detach().clone()
+            else:
+                with torch.no_grad():
+                    x_latent = self.propagate_layer(x_latent)
+                    if t_idx in input_indicies:
+                        x_adapt, x_mask = self.input_adapter(
+                            agents[t_idx], agents_mask[t_idx]
+                        )
+                        x_latent = self.update_layer(x_latent, x_adapt, x_mask)
+                        if self.signal_encoder is not None:
+                            s_adapt, s_mask = self.signal_encoder(
+                                signals[t_idx], signals_mask[t_idx]
+                            )
+                            x_latent = self.signal_attn(x_latent, s_adapt, s_mask)
+                    if self.road_attn is not None:
+                        x_latent = self.road_attn(
+                            x_latent, enc_roadgraph, roadgraph_mask
+                        )
+            if self.prop_layer_norm is not None:
+                x_latent = self.prop_layer_norm(x_latent)
+
+        return out_latent
+
+
 class _CrossAttnWContext(nn.Module):
     """Allows to inject roadgraph features in the self
     attention after the cross-attention"""
@@ -558,8 +642,8 @@ class MotionEncoderContext(nn.Module):
         dropout: float = 0.0,
         detach_latent: bool = False,
         prop_layer_norm: bool = False,
-        roadgraph_ia: Dict[str, Any] = None,
-        signal_ia: Dict[str, Any] = None,
+        roadgraph_ia: Dict[str, Any] | None = None,
+        signal_ia: Dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
 
@@ -885,6 +969,7 @@ class MotionPerceiver(nn.Module):
             MotionEncoderParallel,
             MotionEncoder3,
             MotionEncoder3Ctx,
+            MotionEncodeer3CtxDetach,
         ][enc_version - 1](input_adapter=input_adapter, **encoder)
 
         # Setup Decoder
@@ -898,7 +983,7 @@ class MotionPerceiver(nn.Module):
             **decoder,
         )
 
-    def onnx_export(self, path: Path = None) -> None:
+    def onnx_export(self, path: Path | None = None) -> None:
         """Export to ONNX format"""
         if path is None:
             path = Path.cwd()
