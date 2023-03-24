@@ -18,9 +18,9 @@ from src.dataset.waymo import WaymoDatasetConfig
 from src.dataset.interaction import InteractionConfig
 from src.statistics import Occupancy
 
-from konductor.trainer.initialisation import (
+from konductor.trainer.init import (
     parser_add_common_args,
-    get_experiment_cfg,
+    cli_init_config,
     get_model,
     get_dataloader,
     get_dataset_config,
@@ -327,14 +327,15 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
     parser.add_argument("-w", "--workers", type=int, default=4)
     args = parser.parse_args()
 
-    exp_cfg = get_experiment_cfg(args.workspace, args.config_file, args.run_hash)
+    exp_cfg = cli_init_config(args)
+    exp_cfg.model[0].optimizer.args.pop("step_interval", None)
 
     if args.dataset_override:
-        print(f"Overriding {exp_cfg.data.dataset.name} to {args.dataset_override}")
-        exp_cfg.data.dataset.name = args.dataset_override
+        print(f"Overriding {exp_cfg.data[0].dataset.type} to {args.dataset_override}")
+        exp_cfg.data[0].dataset.type = args.dataset_override
 
     dataset_cfg: WaymoDatasetConfig | InteractionConfig = get_dataset_config(exp_cfg)
-    model: nn.Module = get_model(exp_cfg, dataset_cfg)
+    model: nn.Module = get_model(exp_cfg)
     ckpt = torch.load(
         exp_cfg.work_dir / "latest.pth",
         map_location=f"cuda:{torch.cuda.current_device()}",
@@ -351,9 +352,6 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
 
     model = model.eval().cuda()
 
-    if args.workers is not None:
-        exp_cfg.data.val_loader.args["workers"] = args.workers
-
     if isinstance(dataset_cfg, WaymoDatasetConfig):
         dataset_cfg.heatmap_time = list(range(0, 91))
         dataset_cfg.filter_future = True
@@ -367,21 +365,21 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
 
     if args.scenario_id:
         assert isinstance(dataset_cfg, WaymoDatasetConfig), "Only waymo has scenario id"
-        exp_cfg.data.val_loader.args["batch_size"] = 1
+        exp_cfg.data[0].val_loader.args["batch_size"] = 1
         # exp_config.dataset.args.heatmap_time = list(range(20, 91, 10))
         dataset_cfg.scenario_id = True
         # Load challenge ids
         with open(args.scenario_id, "r", encoding="utf-8") as f:
             filter_ids = set([l.strip() for l in f.readlines()])
     else:
-        exp_cfg.data.val_loader.args["batch_size"] = args.batch_size
+        exp_cfg.data[0].val_loader.args["batch_size"] = args.batch_size
         filter_ids = None
 
-    dataloader = get_dataloader(exp_cfg, dataset_cfg, "val")
+    dataloader: DALIGenericIterator = get_dataloader(dataset_cfg, "val")
 
     thresh: Optional[float] = args.video_thresh if args.video_thresh else None
     eval_config = EvalConfig(
-        exp_cfg.work_dir / exp_cfg.data.dataset.name,
+        exp_cfg.work_dir / exp_cfg.data[0].dataset.type,
         args.batch_size,
         args.n_statistic,
         args.n_videos,
