@@ -1,12 +1,10 @@
 cmake_minimum_required(VERSION 3.21.3 FATAL_ERROR)
 
-project(dali_plugins LANGUAGES CUDA CXX C)
+project(dali_plugins LANGUAGES CXX C)
 
 find_package(CUDAToolkit REQUIRED COMPONENTS cudart)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_ARCHITECTURES ON)
 
 execute_process(
     COMMAND python3 -c "import nvidia.dali as dali; print(dali.sysconfig.get_lib_dir())"

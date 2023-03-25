@@ -5,13 +5,6 @@ find_package(OpenCV REQUIRED COMPONENTS imgproc)
 add_library(maskfrompoly SHARED maskfrompoly.cpp)
 target_compile_features(maskfrompoly PRIVATE cxx_std_17 c_std_11)
 
-set_target_properties(maskfrompoly
-    PROPERTIES
-    CUDA_STANDARD "14"
-    CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES "86;80;75;70;61"
-)
-
 target_compile_options(
     maskfrompoly
     PRIVATE

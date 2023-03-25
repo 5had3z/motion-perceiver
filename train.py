@@ -2,6 +2,7 @@ from argparse import Namespace as NS
 import logging
 from typing import Tuple, Dict, List
 
+import torch
 from torch import Tensor, nn, no_grad
 from torch.profiler import record_function
 from konductor.trainer.pbar import pbar_wrapper
@@ -117,4 +118,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision("high")
+    logging.basicConfig(
+        format="%(asctime)s-%(processName)s-%(levelname)s-%(name)s: %(message)s",
+        level=logging.INFO,
+    )
     main()

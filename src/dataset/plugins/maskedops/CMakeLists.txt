@@ -3,13 +3,6 @@ cmake_minimum_required(VERSION 3.21.3 FATAL_ERROR)
 add_library(maskedops SHARED maskedops.cpp)
 target_compile_features(maskedops PRIVATE cxx_std_17 c_std_11)
 
-set_target_properties(maskedops
-    PROPERTIES
-    CUDA_STANDARD "14"
-    CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES "86;80;75;70;61"
-)
-
 target_compile_options(
     maskedops
     PRIVATE

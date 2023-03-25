@@ -5,13 +5,6 @@ find_package(OpenCV REQUIRED COMPONENTS imgproc)
 add_library(roadgraph SHARED roadgraph.cpp)
 target_compile_features(roadgraph PRIVATE cxx_std_17 c_std_11)
 
-set_target_properties(roadgraph
-    PROPERTIES
-    CUDA_STANDARD "14"
-    CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES "86;80;75;70;61"
-)
-
 target_compile_options(
     roadgraph
     PRIVATE
