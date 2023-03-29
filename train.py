@@ -2,28 +2,27 @@ from argparse import Namespace as NS
 import logging
 from typing import Tuple, Dict, List
 
-import torch
-from torch import Tensor, nn, no_grad
+from torch import Tensor, nn
 from torch.profiler import record_function
 from konductor.trainer.pbar import pbar_wrapper
 from konductor.trainer.init import get_training_parser, init_training, cli_init_config
 from konductor.trainer.pytorch import (
     PyTorchTrainer,
-    PyTorchTrainingModules,
-    PerfLogger,
-    TrainingMangerConfig,
+    PyTorchTrainerModules,
+    PyTorchTrainerConfig,
 )
 
 import src  # Imports all components into framework
-from src.statistics import Occupancy
 
 
 class Trainer(PyTorchTrainer):
+    def data_transform(self, data: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
+        """Remove list dimension"""
+        return data[0]
+
     @staticmethod
     def train_step(
-        batch_data: List[Dict[str, Tensor]],
-        model: nn.Module,
-        criterions: List[nn.Module],
+        data: Dict[str, Tensor], model: nn.Module, criterions: List[nn.Module]
     ) -> Tuple[Dict[str, Tensor], Dict[str, Tensor] | None]:
         """
         Standard training step, if you don't want to calculate
@@ -32,8 +31,6 @@ class Trainer(PyTorchTrainer):
             Losses: description of losses for logging purposes
             Predictions: predictions in dict
         """
-        data = {k: d.cuda() for k, d in batch_data[0].items()}
-
         with record_function("train_inference"):
             pred = model(**data)
 
@@ -46,9 +43,7 @@ class Trainer(PyTorchTrainer):
 
     @staticmethod
     def val_step(
-        batch_data: List[Dict[str, Tensor]],
-        model: nn.Module,
-        criterions: List[nn.Module],
+        data: Dict[str, Tensor], model: nn.Module, criterions: List[nn.Module]
     ) -> Tuple[Dict[str, Tensor] | None, Dict[str, Tensor]]:
         """
         Standard evaluation step, if you don't want to evaluate/track loss
@@ -58,38 +53,15 @@ class Trainer(PyTorchTrainer):
             Losses: description of losses for logging purposes
             Predictions: predictions dict
         """
-        data = {k: d.cuda() for k, d in batch_data[0].items()}
-
         with record_function("eval_inference"):
             pred = model(**data)
 
         return None, pred
 
-    @staticmethod
-    @no_grad()
-    @record_function("statistics")
-    def log_step(
-        logger: PerfLogger,
-        data: List[Dict[str, Tensor]],
-        preds: Dict[str, Tensor] | None,
-        losses: Dict[str, Tensor] | None,
-    ) -> None:
-        """
-        Logging things, statistics should have "losses" tracker, all losses are forwarded
-        to that. If losses are missing logging of them will be skipped (if you don't want
-        to log loss during eval). If predictions are missing then accuracy logging will
-        be skipped (if you don't want to log acc during training)
-        """
-        for statistic in logger.keys:
-            if statistic == "loss" and losses is not None:
-                logger.log(statistic, {k: v.item() for k, v in losses.items()})
-            elif preds is not None:
-                logger.log(statistic, preds, data[0])
-
 
 def setup(cli_args: NS) -> Trainer:
     exp_config = cli_init_config(cli_args)
-    trainer_config = TrainingMangerConfig()
+    trainer_config = PyTorchTrainerConfig()
     if cli_args.pbar:
         trainer_config.pbar = pbar_wrapper
 
@@ -97,8 +69,8 @@ def setup(cli_args: NS) -> Trainer:
         exp_config,
         Trainer,
         trainer_config,
-        {"occupancy": Occupancy},
-        PyTorchTrainingModules,
+        {"occupancy": src.statistics.Occupancy},
+        PyTorchTrainerModules,
     )
 
 
@@ -118,7 +90,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    torch.set_float32_matmul_precision("high")
+    # torch.set_float32_matmul_precision("high") # Maybe causes NANs?
     logging.basicConfig(
         format="%(asctime)s-%(processName)s-%(levelname)s-%(name)s: %(message)s",
         level=logging.INFO,
