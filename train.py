@@ -10,6 +10,7 @@ from konductor.trainer.pytorch import (
     PyTorchTrainer,
     PyTorchTrainerModules,
     PyTorchTrainerConfig,
+    AsyncFiniteMonitor,
 )
 
 import src  # Imports all components into framework
@@ -61,7 +62,7 @@ class Trainer(PyTorchTrainer):
 
 def setup(cli_args: NS) -> Trainer:
     exp_config = cli_init_config(cli_args)
-    trainer_config = PyTorchTrainerConfig()
+    trainer_config = PyTorchTrainerConfig(loss_monitor=AsyncFiniteMonitor())
     if cli_args.pbar:
         trainer_config.pbar = pbar_wrapper
 
