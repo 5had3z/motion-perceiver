@@ -22,9 +22,8 @@ class Trainer(PyTorchTrainer):
         """Remove list dimension"""
         return data[0]
 
-    @staticmethod
     def train_step(
-        data: Dict[str, Tensor], model: nn.Module, criterions: List[nn.Module]
+        self, data: Dict[str, Tensor]
     ) -> Tuple[Dict[str, Tensor], Dict[str, Tensor] | None]:
         """
         Standard training step, if you don't want to calculate
@@ -34,18 +33,17 @@ class Trainer(PyTorchTrainer):
             Predictions: predictions in dict
         """
         with record_function("train_inference"):
-            pred = model(**data)
+            pred = self.modules.model(**data)
 
         with record_function("criterion"):
             losses = {}
-            for criterion in criterions:
+            for criterion in self.modules.criterion:
                 losses.update(criterion(pred, data))
 
         return losses, None
 
-    @staticmethod
     def val_step(
-        data: Dict[str, Tensor], model: nn.Module, criterions: List[nn.Module]
+        self, data: Dict[str, Tensor]
     ) -> Tuple[Dict[str, Tensor] | None, Dict[str, Tensor]]:
         """
         Standard evaluation step, if you don't want to evaluate/track loss
@@ -56,7 +54,7 @@ class Trainer(PyTorchTrainer):
             Predictions: predictions dict
         """
         with record_function("eval_inference"):
-            pred = model(**data)
+            pred = self.modules.model(**data)
 
         return None, pred
 
