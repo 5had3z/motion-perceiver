@@ -2,6 +2,7 @@ from argparse import Namespace as NS
 import logging
 from typing import Tuple, Dict, List
 
+import torch
 from torch import Tensor, nn
 from torch.profiler import record_function
 from konductor.trainer.pbar import pbar_wrapper
@@ -81,6 +82,10 @@ def run(trainer: Trainer, epochs: int) -> None:
     while trainer.data_manager.epoch < epochs:
         trainer.run_epoch()
 
+    # Stop async thread
+    if isinstance(trainer.loss_monitor, AsyncFiniteMonitor):
+        trainer.loss_monitor.stop()
+
 
 def main() -> None:
     cli_parser = get_training_parser()
@@ -91,7 +96,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # torch.set_float32_matmul_precision("high") # Maybe causes NANs?
+    torch.set_float32_matmul_precision("high")
     logging.basicConfig(
         format="%(asctime)s-%(processName)s-%(levelname)s-%(name)s: %(message)s",
         level=logging.INFO,

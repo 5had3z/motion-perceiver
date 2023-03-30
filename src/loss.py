@@ -63,7 +63,7 @@ class OccupancyFocal(nn.Module):
             prediction, target, pos_weight=self.pos_weight, reduction="none"
         )
         p_t = prob * target + (1 - prob) * (1 - target)
-        loss = ce_loss * ((1 - p_t) ** self.gamma)
+        loss = ce_loss * ((1 - p_t + torch.finfo(prob.dtype).eps) ** self.gamma)
 
         if self.alpha >= 0:
             alpha_t = self.alpha * target + (1 - self.alpha) * (1 - target)
