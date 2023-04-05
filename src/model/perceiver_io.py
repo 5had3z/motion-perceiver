@@ -315,6 +315,7 @@ class PerceiverDecoder(nn.Module):
         num_latent_channels: int,
         num_cross_attention_heads: int = 4,
         dropout: float = 0.0,
+        position_encoding_limit: float = 1.0,
         residule_query: bool = True,
         position_encoding_type: str = "learnable",
         num_frequency_bands: Optional[int] = None,
@@ -329,6 +330,7 @@ class PerceiverDecoder(nn.Module):
                                     Perceiver IO encoder.
         :param num_cross_attention_heads: Number of cross-attention heads.
         :param dropout: Dropout for cross-attention layers and residuals.
+        :param position_encoding_limit: the min/max value of the position encoding (0,1]
         :param position_encoding_type: type of positional encoding used for output, either
                                        "learnable" or "fourier"
         :param num_frequency_bands: number of frequency bands used for fourier position enc
@@ -346,7 +348,11 @@ class PerceiverDecoder(nn.Module):
             assert (
                 num_frequency_bands is not None
             ), "num_frequency_bands required for fourier position encoding"
-            pos = _generate_positions_for_encoding(output_adapter.image_shape)
+            pos = _generate_positions_for_encoding(
+                output_adapter.image_shape,
+                v_min=-position_encoding_limit,
+                v_max=position_encoding_limit,
+            )
             enc = _generate_position_encodings(
                 pos, num_frequency_bands, include_positions=False
             )

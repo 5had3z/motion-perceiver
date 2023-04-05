@@ -43,7 +43,7 @@ std::size_t daliType2size(dali::DALIDataType d)
  * @param l
  * @return std::vector<cv::Point2i> polygon points
  */
-std::vector<cv::Point2i> poseToPoly(float x, float y, float t, float w, float l)
+std::vector<cv::Point2i> poseToPoly(float x, float y, float t, float w, float l) noexcept
 {
     // clang-format off
     // 2x2 rotation matrix
@@ -79,7 +79,7 @@ std::vector<cv::Point2i> poseToPoly(float x, float y, float t, float w, float l)
  * @param maskTensor
  * @return std::vector<int>
  */
-std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor)
+std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor) noexcept
 {
     std::vector<int> newMask;
     const auto outputDims = maskTensor.shape();
@@ -88,7 +88,7 @@ std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor)
     newMask.reserve(outputSize);
 
     // Iterate over each instance in the tensor
-    for (std::size_t inst_id = 0; inst_id < outputDims.shape[0]; ++inst_id)
+    for (int64_t inst_id = 0; inst_id < outputDims.shape[0]; ++inst_id)
     {
         const auto instStart = maskTensor.data<int>() + inst_id * outputDims.shape[1];
 
@@ -126,7 +126,8 @@ std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor)
  */
 void createHeatmapImage(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstDaliTensor tTensor,
     ConstDaliTensor wTensor, ConstDaliTensor lTensor, ConstDaliTensor maskTensor, ConstDaliTensor classTensor,
-    std::size_t inTimeIdx, DaliTensor outputTensor, std::size_t outTimeIdx, bool separateClasses)
+    std::size_t inTimeIdx, DaliTensor outputTensor, std::size_t outTimeIdx, double roiScale,
+    bool separateClasses) noexcept
 {
     const auto outputDims = outputTensor.shape();
     const auto outputStride = outputDims[2] * outputDims[3] * daliType2size(outputTensor.type());
@@ -144,7 +145,7 @@ void createHeatmapImage(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstD
     const auto instanceDim = xTensor.shape()[0];
     const auto timeDim = xTensor.shape()[1];
 
-    for (std::size_t instanceId = 0; instanceId < instanceDim; ++instanceId)
+    for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
     {
         const auto cIdx = instanceId * timeDim + inTimeIdx;
         // If valid sample
@@ -154,12 +155,17 @@ void createHeatmapImage(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstD
             if (classIdx < 0 || classIdx > 2)
                 continue; // skip class that isn't vehicle, pedestrian, cyclist
 
-            // Calulate bbox in image coordinates, transform position from -1,1 to 0,1
-            const float x = (xTensor.data<float>()[cIdx] + 1.f) * outputDims[3] / 2.f;
-            const float y = (yTensor.data<float>()[cIdx] + 1.f) * outputDims[2] / 2.f;
+            // Scaling factor from normalized coordinates to pixel coordinates
+            const float xScale = outputDims[3] / 2.f;
+            const float yScale = outputDims[2] / 2.f;
+
+            // Calulate bbox in image coordinates
+            // transform absolute position from -1,1 to 0,1 before pixel scaling factor
+            const float x = (xTensor.data<float>()[cIdx] / roiScale + 1.f) * xScale;
+            const float y = (yTensor.data<float>()[cIdx] / roiScale + 1.f) * yScale;
             const float angle = tTensor.data<float>()[cIdx];
-            const float width = wTensor.data<float>()[cIdx] * outputDims[3] / 2.f;
-            const float length = lTensor.data<float>()[cIdx] * outputDims[2] / 2.f;
+            const float width = wTensor.data<float>()[cIdx] / roiScale * xScale;
+            const float length = lTensor.data<float>()[cIdx] / roiScale * yScale;
 
             // Find polyPoints
             auto polyPoints = poseToPoly(x, y, angle, width, length);
@@ -176,7 +182,8 @@ void createHeatmapImage(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstD
  */
 void createHeatMapImageMulti(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstDaliTensor tTensor,
     ConstDaliTensor wTensor, ConstDaliTensor lTensor, ConstDaliTensor maskTensor, ConstDaliTensor classTensor,
-    std::vector<std::size_t> timeIdxs, DaliTensor outputTensor, bool filterFuture, bool separateClasses)
+    std::vector<int64_t> timeIdxs, DaliTensor outputTensor, bool filterFuture, double roiScale,
+    bool separateClasses) noexcept
 {
     const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
 
@@ -185,14 +192,15 @@ void createHeatMapImageMulti(ConstDaliTensor xTensor, ConstDaliTensor yTensor, C
     for (std::size_t outputIdx = 0; outputIdx < timeIdxs.size(); ++outputIdx)
     {
         createHeatmapImage(xTensor, yTensor, tTensor, wTensor, lTensor, mask_, classTensor, timeIdxs[outputIdx],
-            outputTensor, outputIdx, separateClasses);
+            outputTensor, outputIdx, roiScale, separateClasses);
     }
 }
 
-std::vector<std::size_t> generateTimeIdxs(
-    std::vector<std::size_t>& constTime, std::uniform_int_distribution<> randDist, std::size_t randCount)
+std::vector<int64_t> generateTimeIdxs(
+    std::vector<int64_t>& constTime, std::uniform_int_distribution<> randDist, int64_t randCount) noexcept
 {
-    std::set<std::size_t> timeIdxs;
+    // Use set since we're operating on a few elements and hash cost would be relatively high.
+    std::set<int64_t> timeIdxs;
     for (auto&& tidx : constTime)
     {
         timeIdxs.emplace(tidx);
@@ -206,8 +214,7 @@ std::vector<std::size_t> generateTimeIdxs(
         timeIdxs.emplace(randDist(randGen));
     }
 
-    std::vector<std::size_t> ret{timeIdxs.begin(), timeIdxs.end()};
-    return ret;
+    return {timeIdxs.begin(), timeIdxs.end()};
 }
 
 template <>
@@ -237,7 +244,7 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
             {
                 createHeatMapImageMulti(xTensor[sampleId], yTensor[sampleId], tTensor[sampleId], wTensor[sampleId],
                     lTensor[sampleId], maskTensor[sampleId], classTensor[sampleId], timeIdx, outputTensor[sampleId],
-                    mFilterFuture, mSeparateClasses);
+                    mFilterFuture, mROIScale, mSeparateClasses);
                 outputTimeIdxType.Copy<::dali::CPUBackend, ::dali::CPUBackend>(
                     outputTimeIdx.raw_mutable_tensor(sampleId), timeIdx.data(), timeIdx.size(), 0);
             });
@@ -256,9 +263,11 @@ DALI_SCHEMA(OccupancyMask)
     .NumInput(7)
     .NumOutput(2)
     .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
+    .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
     .AddArg("const_time_idx", "Time indicies to always sample from", ::dali::DALIDataType::DALI_INT_VEC)
     .AddArg("separate_classes", "Separate classes occupancy into different channels", ::dali::DALIDataType::DALI_BOOL)
     .AddArg("filter_future", "Filter ids that don't appear in past or current frame", ::dali::DALIDataType::DALI_BOOL)
     .AddOptionalArg("min_random_idx", "Minimum random time index to sample", 0)
     .AddOptionalArg("max_random_idx", "Maximum random time index to sample", 0)
-    .AddOptionalArg("n_random_idx", "Number of random time idx to sample from with replacement", 0);
+    .AddOptionalArg(
+        "n_random_idx", "Number of random time idx to sample from with replacement", static_cast<int64_t>(0));

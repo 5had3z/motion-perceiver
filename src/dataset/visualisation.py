@@ -165,8 +165,21 @@ def render_signals(signals: np.ndarray, im_shape) -> np.ndarray:
     return signal_image
 
 
+def resize_occupancy(occ: np.ndarray, roi_scale: float) -> np.ndarray:
+    """Resize occupancy to map scale if there is decoupled scales"""
+    if roi_scale == 1:
+        return occ
+    scaled = np.zeros_like(occ)
+    start = int((1 - roi_scale) * occ.shape[0] / 2)
+    end = start + int(roi_scale * occ.shape[0])
+    scaled[start:end, start:end] = cv2.resize(
+        occ, tuple(s // 2 for s in occ.shape), interpolation=cv2.INTER_LINEAR
+    )
+    return scaled
+
+
 def roadmap_and_occupancy(
-    roadmaps: Tensor, occupancies: Tensor, signals: Tensor
+    roadmaps: Tensor, occupancies: Tensor, signals: Tensor, roi_scale: float = 1
 ) -> None:
     """Overlay both occupancy and roadmap image to ensure they're synchronised"""
     roadmaps = roadmaps.cpu().numpy()
@@ -183,7 +196,9 @@ def roadmap_and_occupancy(
         for tidx, occupancy in enumerate(occupancy_vec[0]):
             figname = f"occupancy_roadimg_{bidx}_{tidx}"
             plt.figure(figname, figsize=(10, 10))
-            img = np.stack([roadmap, occupancy, signal_map], axis=-1)
+            img = np.stack(
+                [roadmap, resize_occupancy(occupancy, roi_scale), signal_map], axis=-1
+            )
             if tidx == 1:  # SDC Target Frame
                 img = cv2.drawMarker(
                     img,

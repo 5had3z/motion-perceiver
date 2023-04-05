@@ -26,6 +26,7 @@ class MotionPerceiverConfig(TorchModelConfig):
 
         sz = props["occupancy_size"]
         model_cfg["decoder"]["adapter"]["args"]["image_shape"] = [sz, sz]
+        model_cfg["decoder"]["position_encoding_limit"] = props["occupancy_roi"]
 
         return super().from_config(config)
 

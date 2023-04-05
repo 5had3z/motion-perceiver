@@ -15,10 +15,10 @@ template <typename Backend>
 class RoadGraphImage : public ::dali::Operator<Backend>
 {
 private:
-    bool mWaymoEvalFrame = false;
-    int32_t mMarkingFlags = 0;
-    float mNormalizeFactor = 0;
-    std::size_t mImageSize = 0;
+    bool mWaymoEvalFrame{false};
+    int32_t mMarkingFlags{0};
+    float mNormalizeFactor{0};
+    int64_t mImageSize{0};
 
 public:
     enum MarkingTypes
@@ -32,8 +32,8 @@ public:
     inline explicit RoadGraphImage(const ::dali::OpSpec& spec)
         : ::dali::Operator<Backend>(spec)
         , mWaymoEvalFrame(spec.GetArgument<bool>("waymo_eval_frame"))
-        , mImageSize(spec.GetArgument<int64_t>("size"))
         , mNormalizeFactor(spec.GetArgument<float>("normalize_value"))
+        , mImageSize(spec.GetArgument<int64_t>("size"))
     {
         mMarkingFlags |= spec.GetArgument<bool>("lane_center") << MarkingTypes::LANECENTER;
         mMarkingFlags |= spec.GetArgument<bool>("lane_markings") << MarkingTypes::ROADLINE;

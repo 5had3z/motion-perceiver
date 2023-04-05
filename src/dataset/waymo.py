@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from subprocess import run
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
@@ -38,41 +38,79 @@ def _cache_record_idx(dataset_path: Path) -> Path:
     return dali_idx_path
 
 
+@dataclass
+@DATASET_REGISTRY.register_module("waymo_motion")
+class WaymoDatasetConfig(DatasetConfig):
+    occupancy_size: int = field(kw_only=True)
+    full_sequence: bool = False
+    # fmt: off
+    # Vehicle_features is order sensitive (this is ordering of channel concatenation)
+    vehicle_features: List[str] = field(
+        default_factory=lambda: [
+            "x", "y", "bbox_yaw", "velocity_x", "velocity_y", "vel_yaw", "width", "length"])
+    # fmt: on
+    roadmap: bool = False
+    signal_features: bool = False
+    map_normalize: float = 0.0
+    heatmap_time: List[int] | None = None
+    filter_future: bool = False
+    separate_classes: bool = False
+    random_heatmap_minmax: Tuple[int, int] | None = None
+    random_heatmap_count: int = 0
+    scenario_id: bool = False
+    use_sdc_frame: bool = False
+    waymo_eval_frame: bool = False
+    roadmap_size: int | None = None
+    only_vehicles: bool = False
+    # How to scale the occupancy roi, whole image => 1, center crop => 0.5
+    occupancy_roi: float = 1.0
+
+    @property
+    def properties(self) -> Dict[str, Any]:
+        props = asdict(self)
+        if self.separate_classes:
+            props["classes"] = ["vehicles", "pedestrains", "cyclists"]
+        return props
+
+    def __post_init__(self):
+        if self.heatmap_time is None:
+            self.heatmap_time = [10] if self.full_sequence else [0]
+        if self.roadmap_size is None:
+            self.roadmap_size = self.occupancy_size
+
+    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
+        root = {
+            Mode.train: self.basepath / "training",
+            Mode.val: self.basepath / "validation",
+            Mode.test: self.basepath / "testing",
+        }[mode]
+
+        output_map = ["agents", "agents_valid"]
+        if self.roadmap:
+            output_map.append("roadmap")
+        if self.signal_features:
+            output_map.extend(["signals", "signals_valid"])
+        if self.occupancy_size > 0:
+            output_map.extend(["heatmap", "time_idx"])
+        if self.scenario_id:
+            output_map.append("scenario_id")
+
+        return waymo_motion_pipe(root, cfg=self, **kwargs), output_map, root.stem
+
+
 @pipeline_def
 def waymo_motion_pipe(
     record_root: Path,
     shard_id: int,
     num_shards: int,
     random_shuffle: bool,
-    full_sequence: bool = False,
-    vehicle_features: List[str] | None = None,
-    roadmap: bool = False,
-    signal_features: bool = False,
-    map_normalize: float = 0.0,
-    occupancy_size: int = 0,
-    heatmap_time: List[int] | None = None,
-    filter_future: bool = False,
-    separate_classes: bool = False,
-    random_heatmap_minmax: Tuple[int, int] | None = None,
-    random_heatmap_count: int = 0,
-    scenario_id: bool = False,
-    use_sdc_frame: bool = False,
-    waymo_eval_frame: bool = False,
-    roadmap_size: int | None = None,
+    cfg: WaymoDatasetConfig,
 ):
     """Waymo data should be split in separate folders
     training/validation/testing. Therefore we should be able
     to determine the split by the folder name"""
 
     # fmt: off
-    # Vehicle_features is order sensitive (this is ordering of channel concatenation)
-    if vehicle_features is None:
-        vehicle_features = [
-            "x", "y", "bbox_yaw",
-            "velocity_x", "velocity_y", "vel_yaw",
-            "width", "length",
-        ]
-
     # Features of the road.
     roadgraph_features = {
         # "roadgraph_samples/dir": tfrec.FixedLenFeature([20000, 3], tfrec.float32, 0.0),
@@ -180,7 +218,7 @@ def waymo_motion_pipe(
 
     _time_keys = ["past", "current", "future"]
 
-    if full_sequence:
+    if cfg.full_sequence:
         data = {
             "valid": fn.cat(
                 *[
@@ -190,19 +228,18 @@ def waymo_motion_pipe(
                 axis=1,
             )
         }
-        for key in vehicle_features:
+        for key in cfg.vehicle_features:
             data[key] = fn.cat(
-                *[inputs[f"state/{time_}/{key}"] for time_ in _time_keys],
-                axis=1,
+                *[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1
             )
     else:
         data = {
             "valid": fn.cast(inputs["state/current/valid"], dtype=DALIDataType.INT32)
         }
-        for key in vehicle_features:
+        for key in cfg.vehicle_features:
             data[key] = inputs[f"state/current/{key}"]
 
-    if use_sdc_frame:
+    if cfg.use_sdc_frame:  # Center based on SDC
         sdc_mask = inputs["state/is_sdc"] * inputs["state/current/valid"][:, 0]
         sdc_mask = fn.cast(sdc_mask, dtype=DALIDataType.INT32)
         center_x = fn.masked_median(inputs["state/current/x"], sdc_mask)
@@ -210,16 +247,16 @@ def waymo_motion_pipe(
         rot_angle = Constant(math.pi / 2, dtype=DALIDataType.FLOAT) - fn.masked_median(
             inputs["state/current/bbox_yaw"], sdc_mask
         )
-    else:
-        # Center coordinate system based off vehicles
+    else:  #  Center system based on median agent position
         center_x = fn.masked_median(data["x"], data["valid"])
         center_y = fn.masked_median(data["y"], data["valid"])
         rot_angle = Constant(0.0, dtype=DALIDataType.FLOAT)
 
+    # Center the frame
     data["x"] -= center_x
     data["y"] -= center_y
 
-    if use_sdc_frame:
+    if cfg.use_sdc_frame:
         # Rotate x,y coords
         temp_x = dmath.cos(rot_angle) * data["x"] - dmath.sin(rot_angle) * data["y"]
         data["y"] = dmath.sin(rot_angle) * data["x"] + dmath.cos(rot_angle) * data["y"]
@@ -238,18 +275,16 @@ def waymo_motion_pipe(
 
         data["bbox_yaw"] += rot_angle
 
-    # Center the map at 0,0 and divide by normalization factor
-    if map_normalize > 0.0:
+    if cfg.waymo_eval_frame:  # flip y and move back 20m
+        data["velocity_y"] *= -1
+        data["y"] *= -1
+        data["y"] += 20
+
+    if cfg.map_normalize > 0.0:  # Divide by normalization factor
         for key in ["width", "length", "x", "y"]:
-            data[key] /= map_normalize
+            data[key] /= cfg.map_normalize
 
-        if waymo_eval_frame:
-            # flip y
-            data["velocity_y"] *= -1
-            data["y"] *= -1
-            data["y"] += 128 / occupancy_size
-
-        # x and y are less than 1
+        # x and y are within the ROI
         data["valid"] = (
             data["valid"] * (dmath.abs(data["x"]) < 1) * (dmath.abs(data["y"]) < 1)
         )
@@ -259,7 +294,7 @@ def waymo_motion_pipe(
             dmath.sin(data["bbox_yaw"]), dmath.cos(data["bbox_yaw"])
         )
 
-        if waymo_eval_frame:  # flip sign
+        if cfg.waymo_eval_frame:  # flip sign
             data["bbox_yaw"] *= -1
 
     # Maybe an idea for later, will stick with xy for now
@@ -272,15 +307,21 @@ def waymo_motion_pipe(
 
     # Add type id to features at the end
     data["class"] = fn.stack(
-        *[inputs["state/type"] for _ in range(91 if full_sequence else 1)], axis=1
+        *[inputs["state/type"] for _ in range(91 if cfg.full_sequence else 1)], axis=1
     )
-    if separate_classes:
-        vehicle_features.append("class")
+    if cfg.separate_classes:
+        cfg.vehicle_features.append("class")
 
-    outputs = [fn.stack(*[data[k] for k in vehicle_features], axis=2), data["valid"]]
+    if cfg.only_vehicles:  # Mark all other classes as invalid
+        data["valid"] = data["valid"] * (data["class"] == 1)
+
+    outputs = [
+        fn.stack(*[data[k] for k in cfg.vehicle_features], axis=2),
+        data["valid"],
+    ]
 
     # roadmap into image
-    if roadmap:
+    if cfg.roadmap:
         outputs.append(
             fn.roadgraph_image(
                 inputs[f"roadgraph_samples/xyz"],
@@ -290,15 +331,15 @@ def waymo_motion_pipe(
                 center_x,
                 center_y,
                 rot_angle,
-                size=occupancy_size if roadmap_size is None else roadmap_size,
-                normalize_value=map_normalize,
+                size=cfg.roadmap_size,
+                normalize_value=cfg.map_normalize,
                 lane_center=True,
-                waymo_eval_frame=waymo_eval_frame,
+                waymo_eval_frame=cfg.waymo_eval_frame,
             )
         )
 
     # traffic signal into tensor [id, time]
-    if signal_features:
+    if cfg.signal_features:
         signal_valid = fn.cast(
             fn.cat(
                 *[inputs[f"traffic_light_state/{time_}/valid"] for time_ in _time_keys],
@@ -326,19 +367,18 @@ def waymo_motion_pipe(
         signal_x -= center_x
         signal_y -= center_y
 
-        if use_sdc_frame:
+        if cfg.use_sdc_frame:
             temp_x = dmath.cos(rot_angle) * signal_x - dmath.sin(rot_angle) * signal_y
             signal_y = dmath.sin(rot_angle) * signal_x + dmath.cos(rot_angle) * signal_y
             signal_x = temp_x
 
-        # Normalize Signal Positions
-        if map_normalize > 0.0:
-            signal_x /= map_normalize
-            signal_y /= map_normalize
+        if cfg.waymo_eval_frame:  # flip y and move back 20m
+            signal_y *= -1
+            signal_y += 20
 
-            if waymo_eval_frame:
-                signal_y *= -1  # flip y
-                signal_y += 128 / occupancy_size
+        if cfg.map_normalize > 0.0:  # Normalize Signal Positions
+            signal_x /= cfg.map_normalize
+            signal_y /= cfg.map_normalize
 
             # Signals must be in map roi
             signal_valid = (
@@ -350,21 +390,22 @@ def waymo_motion_pipe(
         )
 
     # Add occupancy heatmap
-    if occupancy_size > 0:
-        if heatmap_time is None:
-            heatmap_time = [10] if full_sequence else [0]
-
+    if cfg.occupancy_size > 0:
         occ_kwargs = dict(
-            size=occupancy_size,
-            const_time_idx=heatmap_time,
-            filter_future=filter_future,
-            separate_classes=separate_classes,
+            size=cfg.occupancy_size,
+            roi=cfg.occupancy_roi,
+            const_time_idx=cfg.heatmap_time,
+            filter_future=cfg.filter_future,
+            separate_classes=cfg.separate_classes,
         )
 
-        if random_heatmap_count > 0:
-            occ_kwargs["n_random_idx"] = random_heatmap_count
-            occ_kwargs["min_random_idx"] = random_heatmap_minmax[0]
-            occ_kwargs["max_random_idx"] = random_heatmap_minmax[1]
+        if cfg.random_heatmap_count > 0:
+            assert (
+                cfg.random_heatmap_minmax is not None
+            ), "minmax must be specified if count > 0"
+            occ_kwargs["n_random_idx"] = cfg.random_heatmap_count
+            occ_kwargs["min_random_idx"] = cfg.random_heatmap_minmax[0]
+            occ_kwargs["max_random_idx"] = cfg.random_heatmap_minmax[1]
 
         outputs.extend(
             fn.occupancy_mask(
@@ -379,62 +420,11 @@ def waymo_motion_pipe(
             )
         )
 
-    if scenario_id:
-        # Add padding
+    if cfg.scenario_id:
+        # Add padding since scenario_id contains <=16 characters
         pad_scenario_str = Constant(16 * [0], dtype=DALIDataType.UINT8)
         scenario_len = fn.shapes(inputs["scenario/id"])[0]
         scenario_pad = pad_scenario_str[:scenario_len] + inputs["scenario/id"]
         return tuple([o.gpu() for o in outputs] + [scenario_pad])
 
     return tuple([o.gpu() for o in outputs])
-
-
-@dataclass
-@DATASET_REGISTRY.register_module("waymo_motion")
-class WaymoDatasetConfig(DatasetConfig):
-    full_sequence: bool = False
-    vehicle_features: List[str] | None = None
-    roadmap: bool = False
-    signal_features: bool = False
-    map_normalize: float = 0.0
-    occupancy_size: int = 0
-    heatmap_time: List[int] | None = None
-    filter_future: bool = False
-    separate_classes: bool = False
-    random_heatmap_minmax: Tuple[int, int] | None = None
-    random_heatmap_count: int = 0
-    scenario_id: bool = False
-    use_sdc_frame: bool = False
-    waymo_eval_frame: bool = False
-    roadmap_size: int | None = None
-
-    @property
-    def properties(self) -> Dict[str, Any]:
-        props = asdict(self)
-        if self.separate_classes:
-            props["classes"] = ["vehicles", "pedestrains", "cyclists"]
-        return props
-
-    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        root = {
-            Mode.train: self.basepath / "training",
-            Mode.val: self.basepath / "validation",
-            Mode.test: self.basepath / "testing",
-        }[mode]
-
-        pipe_kwargs = asdict(self)
-        for kw in ["basepath", "train_loader", "val_loader"]:
-            # Remove super kwargs
-            del pipe_kwargs[kw]
-
-        output_map = ["agents", "agents_valid"]
-        if self.roadmap:
-            output_map.append("roadmap")
-        if self.signal_features:
-            output_map.extend(["signals", "signals_valid"])
-        if self.occupancy_size > 0:
-            output_map.extend(["heatmap", "time_idx"])
-        if self.scenario_id:
-            output_map.append("scenario_id")
-
-        return waymo_motion_pipe(root, **pipe_kwargs, **kwargs), output_map, root.stem

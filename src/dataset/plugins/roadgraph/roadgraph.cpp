@@ -145,7 +145,7 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
         return cv::Point2i{norm_x, norm_y};
     };
 
-    for (std::size_t idx = 1; idx < maxIdx; ++idx)
+    for (int64_t idx = 1; idx < maxIdx; ++idx)
     {
         const auto featureType = static_cast<FeatureType>(typePtr[idx]);
         bool predicate = validPtr[idx - 1] && validPtr[idx];

@@ -16,22 +16,24 @@ template <typename Backend>
 class OccupancyMaskGenerator : public ::dali::Operator<Backend>
 {
 private:
-    bool mSeparateClasses = false;
-    bool mFilterFuture = false;
-    std::size_t mMaskSize = 0;
-    std::size_t mRandIdxCount = 0;
-    std::vector<std::size_t> mConstTimeIndex;
+    bool mSeparateClasses{false};
+    bool mFilterFuture{false};
+    float mROIScale{1.0};
+    int64_t mMaskSize{0};
+    int64_t mRandIdxCount{0};
     std::uniform_int_distribution<> mRandIdx;
+    std::vector<int64_t> mConstTimeIndex;
 
 public:
     inline explicit OccupancyMaskGenerator(const ::dali::OpSpec& spec)
         : ::dali::Operator<Backend>(spec)
-        , mSeparateClasses(spec.GetArgument<bool>("separate_classes"))
-        , mFilterFuture(spec.GetArgument<bool>("filter_future"))
-        , mMaskSize(spec.GetArgument<int64_t>("size"))
-        , mRandIdxCount(spec.GetArgument<int64_t>("n_random_idx"))
-        , mRandIdx(spec.GetArgument<std::size_t>("min_random_idx"), spec.GetArgument<std::size_t>("max_random_idx"))
-        , mConstTimeIndex(spec.GetRepeatedArgument<std::size_t>("const_time_idx"))
+        , mSeparateClasses{spec.GetArgument<bool>("separate_classes")}
+        , mFilterFuture{spec.GetArgument<bool>("filter_future")}
+        , mROIScale{spec.GetArgument<float>("roi")}
+        , mMaskSize{spec.GetArgument<int64_t>("size")}
+        , mRandIdxCount{spec.GetArgument<int64_t>("n_random_idx")}
+        , mRandIdx{spec.GetArgument<int>("min_random_idx"), spec.GetArgument<int>("max_random_idx")}
+        , mConstTimeIndex{spec.GetRepeatedArgument<int64_t>("const_time_idx")}
     {
     }
 
@@ -54,8 +56,10 @@ protected:
         const auto& input = ws.Input<Backend>(0);
         const auto n_samples = input.num_samples();
 
-        DALI_ENFORCE((mRandIdx.max() - mRandIdx.min()) >= mRandIdxCount,
+        DALI_ENFORCE(static_cast<std::size_t>(mRandIdx.max() - mRandIdx.min()) >= mRandIdxCount,
             "Number of random time idxs to yield is greater than the min-max range");
+
+        DALI_ENFORCE(mROIScale > 0.0 && mROIScale <= 1.0, "invalid roi, 0 < roi <= 1");
 
         // Class, Timestep, Height, Width
         dali::TensorShape<4> maskShape(

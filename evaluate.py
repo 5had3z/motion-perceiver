@@ -337,7 +337,7 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
     dataset_cfg: WaymoDatasetConfig | InteractionConfig = get_dataset_config(exp_cfg)
     model: nn.Module = get_model(exp_cfg)
     ckpt = torch.load(
-        exp_cfg.work_dir / "latest.pth",
+        exp_cfg.work_dir / "latest.pt",
         map_location=f"cuda:{torch.cuda.current_device()}",
     )["model"]
 
