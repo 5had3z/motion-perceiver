@@ -35,6 +35,7 @@ class EvalConfig:
     n_videos: int = 128
     video_thresh: Optional[float] = None
     filter_ids: Optional[Set[str]] = None
+    roi_scale: float = 1.0
 
 
 def scenairo_id_tensor_2_str(batch_ids: Tensor) -> List[str]:
@@ -91,8 +92,9 @@ def write_video(
     data: np.ndarray,
     pred: np.ndarray,
     path: Path,
-    roadmap: Optional[np.ndarray] = None,
     thresh: Optional[float] = None,
+    roadmap: Optional[np.ndarray] = None,
+    roadmap_scale: float = 1.0,
 ) -> None:
     """Write video of prediction over time"""
 
@@ -109,6 +111,10 @@ def write_video(
     if roadmap is not None:
         if len(roadmap.shape) == 3:
             roadmap = roadmap.squeeze(0)
+        if roadmap_scale < 1.0:
+            start = int((1 - roadmap_scale) * roadmap.shape[0] / 2)
+            end = start + int(roadmap_scale * roadmap.shape[0])
+            roadmap = roadmap[start:end, start:end]
         roadmap = cv2.resize(roadmap, video_shape, interpolation=cv2.INTER_NEAREST)
 
     for idx, (pred_frame, data_frame) in enumerate(zip(pred, data)):
@@ -137,6 +143,7 @@ def write_video_batch(
     path: Path,
     global_it: int,
     threshold: Optional[float] = None,
+    roadmap_scale: float = 1.0,
 ) -> None:
     """Write batch of videos"""
     mpool = mp.Pool(processes=8)
@@ -162,6 +169,7 @@ def write_video_batch(
                     pred=pred_cls.sigmoid().cpu().numpy(),
                     roadmap=roadmap,
                     path=path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.avi",
+                    roadmap_scale=roadmap_scale,
                 ),
             )
 
@@ -291,7 +299,14 @@ def statistic_evaluation(
                 outputs[key][outputs[key] < 0] *= 8.0
 
             if n_samples < config.n_videos:
-                write_video_batch(data, outputs, vid_path, pbar.n, config.video_thresh)
+                write_video_batch(
+                    data,
+                    outputs,
+                    vid_path,
+                    pbar.n,
+                    config.video_thresh,
+                    config.roi_scale,
+                )
 
             if n_samples < config.n_statistic:
                 logger(0, outputs, data)
@@ -385,6 +400,7 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
         args.n_videos,
         thresh,
         filter_ids,
+        dataset_cfg.occupancy_roi,
     )
 
     logger = Occupancy.from_config(
