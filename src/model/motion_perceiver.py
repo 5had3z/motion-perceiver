@@ -997,11 +997,11 @@ class MotionPerceiver(nn.Module):
         time_idx: Tensor,
         agents: Tensor,
         agents_valid: Tensor,
-        roadgraph: Tensor = None,
-        roadgraph_valid: Tensor = None,
-        roadmap: Tensor = None,
-        signals: Tensor = None,
-        signals_valid: Tensor = None,
+        roadgraph: Tensor | None = None,
+        roadgraph_valid: Tensor | None = None,
+        roadmap: Tensor | None = None,
+        signals: Tensor | None = None,
+        signals_valid: Tensor | None = None,
         **kwargs,
     ) -> Dict[str, Tensor]:
         """

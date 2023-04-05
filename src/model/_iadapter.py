@@ -255,7 +255,7 @@ class TrafficIA(InputAdapter):
         yaw_freq: int = 16,
         num_frequency_bands: int = 32,
         class_onehot: bool = False,
-        class_names: List[str] = None,
+        class_names: List[str] | None = None,
     ):
         self.input_mode = TrafficIA.InputMode[input_mode.upper()]
 
@@ -283,7 +283,7 @@ class TrafficIA(InputAdapter):
         self.num_frequency_bands = num_frequency_bands
         super().__init__(num_input_channels)
 
-    def forward(self, x: Tensor, pad_mask: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, pad_mask: Tensor | None = None) -> Tensor:
         """Pad mask is true for masked values for pytorch, we want the opposite in IA"""
         if self.input_mode == TrafficIA.InputMode.RAW:
             return x
@@ -306,22 +306,29 @@ class TrafficIA(InputAdapter):
 
             # ensure that at least one dummy token isn't masked to prevent NaN's
             enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
-            pad_mask = torch.cat([pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1)
+            if pad_mask is not None:
+                pad_mask = torch.cat(
+                    [pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1
+                )
 
         elif self.class_mode == TrafficIA.ClassMode.SEPARATE:
+            assert self.class_names is not None
+            assert pad_mask is not None
+
             cls_mask = x[..., [-1]].to(torch.int64) + 1
             pad_mask_ = {}
             for idx, cls_name in enumerate(self.class_names, 2):
                 pad_mask_[cls_name] = (cls_mask != idx).squeeze(-1) | pad_mask
-            pad_mask = pad_mask_
 
             # ensure that at least one dummy token isn't masked to prevent NaN's
             enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
-            for mask in pad_mask:
-                pad_mask[mask] = torch.cat(
-                    [pad_mask[mask], torch.zeros_like(pad_mask[mask][:, [0]])],
+            for mask in pad_mask_:
+                pad_mask_[mask] = torch.cat(
+                    [pad_mask_[mask], torch.zeros_like(pad_mask_[mask][:, [0]])],
                     dim=1,
                 )
+
+            pad_mask = pad_mask_
 
         return enc_x, pad_mask
 
