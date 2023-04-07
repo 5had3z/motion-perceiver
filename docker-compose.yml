@@ -1,0 +1,39 @@
+# Compose file to create tensorflow container to export waymo eval data
+version: '3.3'
+services:
+  waymo-eval:
+    shm_size: 16gb
+    tty: true
+    build:
+      dockerfile: tf.Dockerfile
+    image: mp:tf
+    entrypoint:
+      [
+        "python3",
+        "export_waymo.py",
+        "--run_hash",
+        "2a7955d9ff608f267ab7adbff689ab3d",
+        "--workspace",
+        "/ckpt",
+        "--split",
+        "val",
+        "export"
+      ]
+    volumes:
+      - type: bind
+        source: ./
+        target: /workspace
+        read_only: false
+      - type: bind
+        source: /path/to/checkpoint # replace
+        target: /ckpt
+        read_only: false
+      - type: bind
+        source: /path/to/motion # replace
+        target: /data
+        read_only: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [ gpu ]

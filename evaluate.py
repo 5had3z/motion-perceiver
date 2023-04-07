@@ -11,12 +11,13 @@ import numpy as np
 from matplotlib import pyplot as plt
 import torch
 from tqdm.auto import tqdm
-from torch import nn, Tensor, inference_mode
+from torch import Tensor, inference_mode
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 from src.dataset.waymo import WaymoDatasetConfig
 from src.dataset.interaction import InteractionConfig
 from src.statistics import Occupancy
+from src.model import MotionPerceiver
 
 from konductor.trainer.init import (
     parser_add_common_args,
@@ -239,9 +240,8 @@ def yield_filtered_batch(dataloader, filter_ids: Set[str], batch_size: int):
         yield [gather_dict(meta_batch)]
 
 
-@inference_mode()
 def statistic_evaluation(
-    model: nn.Module,
+    model: MotionPerceiver,
     loader: DALIGenericIterator,
     logger: Occupancy,
     config: EvalConfig,
@@ -318,6 +318,54 @@ def statistic_evaluation(
         plot_statistic_time(logger, config.path, input_indicies)
 
 
+def visualise_output_attention(
+    model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig
+):
+    """Visualise the attention for the output pixels of the model
+    to show that each token has an individual response, we can use
+    this to track objects over time and show that each latent variable
+    represents a single agent"""
+
+    def attn_hook(module, inputs, outputs: Tuple[Tensor, Tensor]) -> None:
+        """Hook that grabs the attention map and writes to disk"""
+        print("hooking")
+        _, attn = outputs
+
+        # norm_args = (None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+
+        for bidx, data in enumerate(attn):
+            folder = config.path / f"sample_{bidx}"
+            if not folder.exists():
+                folder.mkdir()
+            for tkn_idx in range(data.shape[-1] // 4):
+                # img = cv2.normalize(
+                #     data[..., tkn_idx].view(256, 256).cpu().numpy(), *norm_args
+                # )
+                img = (
+                    (255.0 * data[..., tkn_idx].view(256, 256))
+                    .to(torch.uint8)
+                    .cpu()
+                    .numpy()
+                )
+                img = cv2.resize(img, (768, 768), interpolation=cv2.INTER_LINEAR)
+                t_idx = len([f for f in folder.glob(f"token_{tkn_idx}_*")])
+                cv2.imwrite(str(folder / f"token_{tkn_idx}_{t_idx:02}.png"), img)
+
+        # np.savez_compressed(
+        #     config.path / "attn",
+        #     **{str(i): v.cpu().numpy() for i, v in enumerate(attn)},
+        # )
+
+    model.decoder.cross_attention._modules[
+        "0"
+    ].attention.attention.register_forward_hook(attn_hook)
+
+    for data in loader:
+        data = data[0]
+        output = model(**data)
+        break
+
+
 def add_eval_args(parser: argparse.ArgumentParser) -> None:
     """Add additonal evaluation settings to parser"""
     parser.add_argument("--n_videos", type=int, default=128)
@@ -334,7 +382,7 @@ def add_eval_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]:
+def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalConfig]:
     """Initalise eval for motion perciever"""
     parser = argparse.ArgumentParser()
     parser_add_common_args(parser)
@@ -350,7 +398,7 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
         exp_cfg.data[0].dataset.type = args.dataset_override
 
     dataset_cfg: WaymoDatasetConfig | InteractionConfig = get_dataset_config(exp_cfg)
-    model: nn.Module = get_model(exp_cfg)
+    model: MotionPerceiver = get_model(exp_cfg)
     ckpt = torch.load(
         exp_cfg.work_dir / "latest.pt",
         map_location=f"cuda:{torch.cuda.current_device()}",
@@ -410,10 +458,12 @@ def initialize() -> Tuple[nn.Module, DALIGenericIterator, Occupancy, EvalConfig]
     return model, dataloader, logger, eval_config
 
 
+@inference_mode()
 def main() -> None:
     """"""
     args = initialize()
     statistic_evaluation(*args)
+    # visualise_output_attention(args[0], args[1], args[3])
 
 
 if __name__ == "__main__":
