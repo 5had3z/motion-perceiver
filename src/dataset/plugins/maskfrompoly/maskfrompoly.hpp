@@ -21,8 +21,9 @@ private:
     float mROIScale{1.0};
     int64_t mMaskSize{0};
     int64_t mRandIdxCount{0};
-    std::uniform_int_distribution<> mRandIdx;
-    std::vector<int64_t> mConstTimeIndex;
+    int64_t mRandIdxMin{0};
+    int64_t mRandIdxMax{0};
+    std::set<int64_t> mConstTimeIndex{};
 
 public:
     inline explicit OccupancyMaskGenerator(const ::dali::OpSpec& spec)
@@ -32,9 +33,14 @@ public:
         , mROIScale{spec.GetArgument<float>("roi")}
         , mMaskSize{spec.GetArgument<int64_t>("size")}
         , mRandIdxCount{spec.GetArgument<int64_t>("n_random_idx")}
-        , mRandIdx{spec.GetArgument<int>("min_random_idx"), spec.GetArgument<int>("max_random_idx")}
-        , mConstTimeIndex{spec.GetRepeatedArgument<int64_t>("const_time_idx")}
+        , mRandIdxMin{spec.GetArgument<int>("min_random_idx")}
+        , mRandIdxMax{spec.GetArgument<int>("max_random_idx")}
+        , mConstTimeIndex{}
     {
+        for (auto&& elem : spec.GetRepeatedArgument<int64_t>("const_time_idx"))
+        {
+            mConstTimeIndex.emplace(elem);
+        }
     }
 
     virtual inline ~OccupancyMaskGenerator() = default;
@@ -56,7 +62,7 @@ protected:
         const auto& input = ws.Input<Backend>(0);
         const auto n_samples = input.num_samples();
 
-        DALI_ENFORCE(static_cast<std::size_t>(mRandIdx.max() - mRandIdx.min()) >= mRandIdxCount,
+        DALI_ENFORCE((mRandIdxMax - mRandIdxMin) >= mRandIdxCount,
             "Number of random time idxs to yield is greater than the min-max range");
 
         DALI_ENFORCE(mROIScale > 0.0 && mROIScale <= 1.0, "invalid roi, 0 < roi <= 1");

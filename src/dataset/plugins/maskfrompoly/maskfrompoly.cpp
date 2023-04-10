@@ -197,23 +197,25 @@ void createHeatMapImageMulti(ConstDaliTensor xTensor, ConstDaliTensor yTensor, C
 }
 
 std::vector<int64_t> generateTimeIdxs(
-    std::vector<int64_t>& constTime, std::uniform_int_distribution<> randDist, int64_t randCount) noexcept
+    std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount) noexcept
 {
-    // Use set since we're operating on a few elements and hash cost would be relatively high.
-    std::set<int64_t> timeIdxs;
-    for (auto&& tidx : constTime)
-    {
-        timeIdxs.emplace(tidx);
-    }
+    // Create vector of candidates
+    std::vector<int64_t> randomIdxs(maxTime - minTime);
+    std::iota(randomIdxs.begin(), randomIdxs.end(), minTime);
 
-    std::random_device dev;
-    std::mt19937 randGen(dev());
-    // random sort vector and sample would be guaranteed O(N) vs this which is O(inf)
-    while (timeIdxs.size() < randCount + constTime.size())
-    {
-        timeIdxs.emplace(randDist(randGen));
-    }
+    // Remove if within the constant set
+    std::remove_if(randomIdxs.begin(), randomIdxs.end(), [&](int64_t i) { return constTime.count(i) > 0; });
 
+    // Randomly Shuffle
+    std::shuffle(randomIdxs.begin(), randomIdxs.end(), std::mt19937{std::random_device{}()});
+
+    // Create new set with constant and n randomly sampled time idxs
+    // We use a set so its ordered which may simplify things downstream
+    // Although this does contain some strange syntax....
+    std::set<int64_t> timeIdxs = constTime;
+    std::copy(randomIdxs.begin(), randomIdxs.begin() + randCount, std::inserter(timeIdxs, timeIdxs.begin()));
+
+    // Return as std::vector
     return {timeIdxs.begin(), timeIdxs.end()};
 }
 
@@ -235,7 +237,8 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
     auto& tPool = ws.GetThreadPool();
     const auto& inShape = xTensor.shape();
 
-    const auto timeIdx = generateTimeIdxs(mConstTimeIndex, mRandIdx, mRandIdxCount);
+    // Time idxs are generated batch synchronous
+    const auto timeIdx = generateTimeIdxs(mConstTimeIndex, mRandIdxMin, mRandIdxMax, mRandIdxCount);
 
     for (int sampleId = 0; sampleId < inShape.num_samples(); ++sampleId)
     {
