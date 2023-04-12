@@ -3,7 +3,7 @@ General AP Statistics for Occupancy Heatmap
 """
 from pathlib import Path
 from itertools import product
-from typing import Dict, List, Optional
+from typing import Dict, List, Tuple
 
 import numpy as np
 from scipy import integrate
@@ -36,8 +36,8 @@ class Occupancy(Statistic):
 
     def __init__(
         self,
-        time_idxs: Optional[List[int]] = None,
-        classes: Optional[List[str]] = None,
+        time_idxs: List[int] | None = None,
+        classes: List[str] | None = None,
         **kwargs,
     ):
         super().__init__(logger_name="OccupancyEval", **kwargs)
@@ -143,7 +143,7 @@ class Occupancy(Statistic):
     ) -> None:
         """"""
         super().__call__(it)
-        for idx_, name in enumerate(predictions):
+        for idx_, name in enumerate(p for p in predictions if "heatmap" in p):
             prediction = predictions[name]
             target = targets["heatmap"][:, idx_]
             self.run_over_classes(
@@ -152,3 +152,60 @@ class Occupancy(Statistic):
                 targets["time_idx"],
                 f"{name}_" if name != "heatmap" else "",
             )
+
+
+class Signal(Statistic):
+    """Tracking signal prediction performance"""
+
+    sort_lambda = {"AUC": max, "IoU": max}
+
+    @classmethod
+    def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
+        time_idxs = set()
+        if "random_heatmap_minmax" in kwargs:
+            _min, _max = kwargs["random_heatmap_minmax"]
+            time_idxs.update(set(range(_min, _max + 1)))
+        if "heatmap_time" in kwargs:
+            time_idxs.update(set(kwargs["heatmap_time"]))
+
+        return cls(
+            time_idxs=sorted(list(time_idxs)),
+            buffer_length=buffer_length,
+            writepath=writepath,
+            reduce_batch=True,
+        )
+
+    def __init__(self, time_idxs: List[int], **kwargs) -> None:
+        super().__init__(logger_name="SignalEval", **kwargs)
+        self.time_idxs = time_idxs
+
+        # Create statistic keys
+        data_keys = [f"Acc_{t}" for t in time_idxs]
+
+        # Add Statistic Keys and dummy buffer
+        for key in data_keys:
+            self._statistics[key] = np.empty(0)
+
+        self.reset()
+
+    @staticmethod
+    def get_targets(
+        targets: Tensor, mask: Tensor, timestamps: Tensor
+    ) -> Tuple[Tensor, Tensor]:
+        """Build the signal ground truth to target"""
+        return targets[:, timestamps, :, -1], mask[:, timestamps]
+
+    def __call__(
+        self, it: int, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
+    ) -> None:
+        """"""
+        super().__call__(it)
+        target_signal, valid_signal = self.get_targets(
+            targets["signals"], targets["signals_valid"], targets["time_idx"][0]
+        )
+        correct = predictions["signals"].argmax(dim=-1) == target_signal.long()
+        correct *= valid_signal.bool()  # Mask incorrect to false
+        accuracy = correct.sum(dim=[0, 2]) / valid_signal.sum(dim=[0, 2])
+
+        for acc, tidx in zip(accuracy, targets["time_idx"][0]):
+            self._append_sample(f"Acc_{tidx.item()}", acc.item())

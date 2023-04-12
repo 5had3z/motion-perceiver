@@ -1,9 +1,9 @@
 from argparse import Namespace as NS
 import logging
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Type
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 from torch.profiler import record_function
 from konductor.trainer.pbar import pbar_wrapper
 from konductor.trainer.init import get_training_parser, init_training, cli_init_config
@@ -13,6 +13,7 @@ from konductor.trainer.pytorch import (
     PyTorchTrainerConfig,
     AsyncFiniteMonitor,
 )
+from konductor.metadata.statistics import Statistic
 
 import src  # Imports all components into framework
 
@@ -65,12 +66,12 @@ def setup(cli_args: NS) -> Trainer:
     if cli_args.pbar:
         trainer_config.pbar = pbar_wrapper
 
+    statistics: Dict[str, Type[Statistic]] = {"occupancy": src.statistics.Occupancy}
+    if exp_config.model[0].args.get("signal_decoder", False):
+        statistics["signal-forecast"] = src.statistics.Signal
+
     return init_training(
-        exp_config,
-        Trainer,
-        trainer_config,
-        {"occupancy": src.statistics.Occupancy},
-        PyTorchTrainerModules,
+        exp_config, Trainer, trainer_config, statistics, PyTorchTrainerModules
     )
 
 
