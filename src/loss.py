@@ -1,6 +1,6 @@
 """Loss function and utilities for occupancy prediction for heatmap
 """
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from dataclasses import dataclass, asdict
 
 import torch
@@ -8,7 +8,6 @@ from torch import nn, Tensor
 from torch.nn.functional import binary_cross_entropy_with_logits
 
 from konductor.modules.losses import REGISTRY, LossConfig, ExperimentInitConfig
-from konductor.modules.init import ModuleInitConfig
 
 
 class OccupancyBCE(nn.Module):
@@ -75,8 +74,8 @@ class OccupancyFocal(nn.Module):
         self, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
     ) -> Dict[str, Tensor]:
         """"""
-        loss = torch.zeros(1).cuda()
-        for idx_, name in enumerate(predictions):
+        loss = torch.zeros(1).cuda().squeeze()
+        for idx_, name in enumerate(p for p in predictions if "heatmap" in p):
             loss += self._forward_aux(predictions[name], targets["heatmap"][:, idx_])
 
         return {"focal": self.weight * loss}
@@ -97,3 +96,45 @@ class OccupancyFocalLoss(LossConfig):
         kwargs = asdict(self)
         del kwargs["names"]
         return OccupancyFocal(**kwargs)
+
+
+class SignalCE(nn.CrossEntropyLoss):
+    """CE between predicted and actual traffic signalling"""
+
+    def __init__(self, weight: float = 1.0) -> None:
+        super().__init__(reduction="none", ignore_index=-1)
+        self._weight = weight
+
+    @staticmethod
+    def get_targets(
+        targets: Tensor, mask: Tensor, timestamps: Tensor
+    ) -> Tuple[Tensor, Tensor]:
+        """Build the signal ground truth to target"""
+        return targets[:, timestamps, :, -1], mask[:, timestamps]
+
+    def forward(
+        self, preds: Dict[str, Tensor], targets: Dict[str, Tensor]
+    ) -> Dict[str, Tensor]:
+        target_signal, valid_signal = self.get_targets(
+            targets["signals"], targets["signals_valid"], targets["time_idx"][0]
+        )
+        loss = super().forward(
+            preds["signals"].flatten(end_dim=-2), target_signal.flatten().long()
+        )
+
+        # Apply mask to zero out invalid signal indicies
+        loss *= valid_signal.flatten()
+        return {"signal_bce": self._weight * loss.mean()}
+
+
+@dataclass
+@REGISTRY.register_module("signal_prediction")
+class SignalBCEConfig(LossConfig):
+    @classmethod
+    def from_config(cls, config: ExperimentInitConfig, idx: int):
+        return super().from_config(config, idx, names=["signal_bce"])
+
+    def get_instance(self) -> Any:
+        kwargs = asdict(self)
+        del kwargs["names"]
+        return SignalCE(**kwargs)

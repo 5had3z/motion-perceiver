@@ -24,6 +24,8 @@ criterion:
   - type: occupancy_focal
     args:
       alpha: 0.95
+  - type: signal_prediction
+    args: {}
 model:
   - type: motion-perceiver
     args:

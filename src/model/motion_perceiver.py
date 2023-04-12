@@ -1042,7 +1042,11 @@ class MotionPerceiver(nn.Module):
 
 
 class SignalDecoder(nn.Module):
-    """Decode signal predictions from the latent state"""
+    """Decode signal predictions from the latent state
+
+    Unknown = 0, Arrow_Stop = 1, Arrow_Caution = 2, Arrow_Go = 3,
+    Stop = 4, Caution = 5, Go = 6, Flashing_Stop = 7, Flashing_Caution = 8
+    """
 
     def __init__(
         self,
@@ -1066,7 +1070,7 @@ class SignalDecoder(nn.Module):
         )
 
         self.out_adapter = ClassificationOA(
-            3, num_output_channels=self.in_adapter.num_input_channels
+            9, num_output_channels=self.in_adapter.num_input_channels
         )
 
     def forward(self, latent: Tensor, signals: Tensor) -> Tensor:
@@ -1144,7 +1148,7 @@ class MotionPercieverWSignals(MotionPerceiver):
         for logit_name in x_logits[0]:
             out_logits[logit_name] = torch.cat([x[logit_name] for x in x_logits], dim=1)
 
-        out_logits["signal"] = torch.stack(s_logits, dim=1)
+        out_logits["signals"] = torch.stack(s_logits, dim=1)
 
         return out_logits
 

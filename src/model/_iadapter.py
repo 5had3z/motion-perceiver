@@ -417,9 +417,8 @@ class SignalIA(InputAdapter):
                 pass
 
         # ensure that at least one dummy token isn't masked to prevent NaN's
-        enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
-
         if pad_mask is not None:
+            enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
             pad_mask = torch.cat([pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1)
 
         return enc_x, pad_mask
