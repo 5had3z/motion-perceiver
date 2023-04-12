@@ -197,14 +197,16 @@ void createHeatMapImageMulti(ConstDaliTensor xTensor, ConstDaliTensor yTensor, C
 }
 
 std::vector<int64_t> generateTimeIdxs(
-    std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount) noexcept
+    const std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount)
 {
     // Create vector of candidates
     std::vector<int64_t> randomIdxs(maxTime - minTime);
     std::iota(randomIdxs.begin(), randomIdxs.end(), minTime);
 
     // Remove if within the constant set
-    std::remove_if(randomIdxs.begin(), randomIdxs.end(), [&](int64_t i) { return constTime.count(i) > 0; });
+    randomIdxs.erase(
+        std::remove_if(randomIdxs.begin(), randomIdxs.end(), [&](int64_t i) { return constTime.count(i) > 0; }),
+        randomIdxs.end());
 
     // Randomly Shuffle
     std::shuffle(randomIdxs.begin(), randomIdxs.end(), std::mt19937{std::random_device{}()});
@@ -213,7 +215,12 @@ std::vector<int64_t> generateTimeIdxs(
     // We use a set so its ordered which may simplify things downstream
     // Although this does contain some strange syntax....
     std::set<int64_t> timeIdxs = constTime;
-    std::copy(randomIdxs.begin(), randomIdxs.begin() + randCount, std::inserter(timeIdxs, timeIdxs.begin()));
+    timeIdxs.insert(randomIdxs.begin(), std::next(randomIdxs.begin(), randCount));
+
+    if (timeIdxs.size() != (randCount + constTime.size()))
+    {
+        throw std::runtime_error("Incorrect size somehow");
+    }
 
     // Return as std::vector
     return {timeIdxs.begin(), timeIdxs.end()};

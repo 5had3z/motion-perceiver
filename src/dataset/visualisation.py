@@ -25,20 +25,24 @@ def sequence(data: Dict[str, Tensor]) -> None:
 
     for i, (seq, valid) in enumerate(zip(data["agents"], data["agents_valid"])):
         plt.figure(f"agents_{i}", figsize=(20, 20))
-        plt.xlim((-1.5, 1.5))
-        plt.ylim((-1.5, 1.5))
+        plt.xlim((-1, 1))
+        plt.ylim((-1, 1))
         for inst, mask in zip(seq, valid):
             valid_pos = inst[mask != 0].cpu().numpy()
             plt.scatter(valid_pos[..., 0], valid_pos[..., 1])
             if inst.shape[0] > 1 and mask[10] != 0:
                 xytvxvy = inst[10, 0:5].cpu().numpy()
-                # Check Heading
-                # dx = 0.02 * np.cos(xytvxvy[2])
-                # dy = 0.02 * np.sin(xytvxvy[2])
+
                 # Check velocity
                 dx = 1 / 40 * xytvxvy[3]
                 dy = 1 / 40 * xytvxvy[4]
-                plt.arrow(xytvxvy[0], xytvxvy[1], dx, dy, width=0.005)
+                plt.arrow(xytvxvy[0], xytvxvy[1], dx, dy, width=0.005, color="b")
+
+                # Check Headding
+                dx = 0.02 * np.cos(xytvxvy[2])
+                dy = 0.02 * np.sin(xytvxvy[2])
+                plt.arrow(xytvxvy[0], xytvxvy[1], dx, dy, width=0.005, color="r")
+
         plt.tight_layout()
         plt.savefig(f"agents_{i}.png")
 

@@ -10,9 +10,10 @@ import src.dataset.visualisation as mv
 
 
 def main():
+    batch_size = 8
     waymo = WaymoDatasetConfig(
-        train_loader=ModuleInitConfig(type="dali", args={"batch_size": 4}),
-        val_loader=ModuleInitConfig(type="dali", args={"batch_size": 4}),
+        train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
+        val_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         full_sequence=True,
         map_normalize=80.0,
         occupancy_size=256,
@@ -22,7 +23,7 @@ def main():
         use_sdc_frame=True,
         waymo_eval_frame=True,
         heatmap_time=list(range(0, 61, 10)),
-        random_heatmap_count=2,
+        random_heatmap_count=6,
         random_heatmap_minmax=(0, 60),
         signal_features=True,
         occupancy_roi=0.5,
