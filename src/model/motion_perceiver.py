@@ -8,7 +8,7 @@ import torch
 from torch import nn, Tensor
 
 from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA
-from ._oadapter import HeatmapOA, ClassHeatmapOA
+from ._oadapter import HeatmapOA, ClassHeatmapOA, ClassificationOA, OutputAdapter
 from . import perceiver_io as pio
 
 
@@ -1016,14 +1016,15 @@ class MotionPerceiver(nn.Module):
         }
 
         if roadgraph is not None and roadgraph.size():
+            assert roadgraph_valid is not None
             kwargs["roadgraph"] = roadgraph
             kwargs["roadgraph_mask"] = roadgraph_valid.bool()
 
         if roadmap is not None and roadmap.size():
             kwargs["roadgraph"] = roadmap
-            kwargs["roadgraph_mask"] = None
 
         if signals is not None and signals.size():
+            assert signals_valid is not None
             kwargs["signals"] = signals.transpose(0, 1)
             kwargs["signals_mask"] = signals_valid.transpose(0, 1).bool()
 
@@ -1036,6 +1037,114 @@ class MotionPerceiver(nn.Module):
         out_logits = {}  # {K:[B,T,H,W]}
         for logit_name in x_logits[0]:
             out_logits[logit_name] = torch.cat([x[logit_name] for x in x_logits], dim=1)
+
+        return out_logits
+
+
+class SignalDecoder(nn.Module):
+    """Decode signal predictions from the latent state"""
+
+    def __init__(
+        self,
+        num_frequency_bands: int,
+        num_latent_channels: int,
+        num_cross_attention_heads: int = 4,
+        dropout: float = 0.0,
+        **_kwargs,  # Drop extra args from normal decoder
+    ) -> None:
+        """"""
+        super().__init__()
+        self.in_adapter = SignalIA(
+            input_mode="fpos", num_frequency_bands=num_frequency_bands
+        )
+        self.cross_attn = pio.cross_attention_layer(
+            num_q_channels=self.in_adapter.num_input_channels,
+            num_kv_channels=num_latent_channels,
+            num_heads=num_cross_attention_heads,
+            dropout=dropout,
+            residule_query=False,
+        )
+
+        self.out_adapter = ClassificationOA(
+            3, num_output_channels=self.in_adapter.num_input_channels
+        )
+
+    def forward(self, latent: Tensor, signals: Tensor) -> Tensor:
+        """Query latent state with signal positions to find state probability"""
+
+        # Generate the positional queries for the signals
+        signals, _ = self.in_adapter(signals)
+
+        # Apply cross attention
+        latent = self.cross_attn(signals, latent)
+
+        # Apply output adapter
+        out = self.out_adapter(latent)
+
+        return out
+
+
+class MotionPercieverWSignals(MotionPerceiver):
+    """Adds traffic signal prediction output for task"""
+
+    def __init__(
+        self,
+        encoder: Dict[str, Any],
+        decoder: Dict[str, Any],
+    ) -> None:
+        super().__init__(encoder, decoder)
+        self.signal_decoder = SignalDecoder(
+            num_latent_channels=self.encoder.latent_dim, **decoder
+        )
+
+    def forward(
+        self,
+        time_idx: Tensor,
+        agents: Tensor,
+        agents_valid: Tensor,
+        signals: Tensor,
+        signals_valid: Tensor,
+        roadgraph: Tensor | None = None,
+        roadgraph_valid: Tensor | None = None,
+        roadmap: Tensor | None = None,
+        **kwargs,
+    ) -> Dict[str, Tensor]:
+        """
+        Format of x_latent, data and mask is T,B,N,C
+        For the time being, the time_idxs to sample from are broadcast
+        across the batch.
+        """
+        kwargs = {
+            "output_idx": time_idx[0],
+            "agents": agents.moveaxis((2, 0), (0, 1)),
+            "agents_mask": ~agents_valid.moveaxis((2, 0), (0, 1)).bool(),
+            "signals": signals.transpose(0, 1),
+            "signals_mask": signals_valid.transpose(0, 1).bool(),
+        }
+
+        if roadgraph is not None and roadgraph.size():
+            assert roadgraph_valid is not None
+            kwargs["roadgraph"] = roadgraph
+            kwargs["roadgraph_mask"] = roadgraph_valid.bool()
+
+        if roadmap is not None and roadmap.size():
+            kwargs["roadgraph"] = roadmap
+
+        x_latents: List[Tensor] = self.encoder(**kwargs)
+
+        x_logits = []  # [T,{K:[B,H,W]}]
+        for x_latent in x_latents:
+            x_logits.append(self.decoder(x_latent))
+
+        s_logits = []
+        for x_latent, t_idx in zip(x_latents, time_idx[0]):
+            s_logits.append(self.signal_decoder(x_latent, kwargs["signals"][t_idx]))
+
+        out_logits = {}  # {K:[B,T,H,W]}
+        for logit_name in x_logits[0]:
+            out_logits[logit_name] = torch.cat([x[logit_name] for x in x_logits], dim=1)
+
+        out_logits["signal"] = torch.stack(s_logits, dim=1)
 
         return out_logits
 

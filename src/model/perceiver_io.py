@@ -380,23 +380,23 @@ class PerceiverDecoder(nn.Module):
         """Export modules as onnx files"""
         print("Exporting Decoder")
         torch.onnx.export(
-            self, torch.randn((1, 128, 256)).cuda(), path / "output_decoder.onnx"
+            self, torch.randn((1, 128, 256)).cuda(), str(path / "output_decoder.onnx")
         )
 
-    def aux_forward(self, x) -> Tensor:
+    def aux_forward(self, x: Tensor) -> Tensor:
         """"""
-        b, *_ = x.shape
-        output = einops.repeat(self.output, "... -> b ...", b=b)
+        output = einops.repeat(self.output, "... -> b ...", b=x.shape[0])
         output = self.cross_attention(output, x)
         return self.output_adapter(output)
 
-    def forward(self, x):
+    def forward(self, x: Tensor | Dict[str, Tensor]):
         """forward impl"""
         if isinstance(x, dict):
             outputs = {}
             for cls_name, cls_output in x.items():
-                outputs[cls_name] = self.aux_forward(cls_output)["heatmap"]
+                outputs[cls_name] = self.aux_forward(cls_output)
             return outputs
+
         return self.aux_forward(x)
 
 

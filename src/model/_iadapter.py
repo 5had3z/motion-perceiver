@@ -351,68 +351,75 @@ class SignalIA(InputAdapter):
 
     def __init__(
         self,
-        input_mode: str,
+        input_mode: str | InputMode,
         map_freq: int = 200,
         num_frequency_bands: int = 32,
         max_enum: int = 8,
         onehot: bool = False,
+        int_cls: bool = False,
     ):
         if onehot:
             self.class_mode = SignalIA.ClassMode.ONEHOT
-        else:
+            num_input_channels = max_enum
+        elif int_cls:
             self.class_mode = SignalIA.ClassMode.SCALAR
+            num_input_channels = 1
+        else:
+            self.class_mode = SignalIA.ClassMode.NONE
+            num_input_channels = 0
 
-        self.input_mode = SignalIA.InputMode[input_mode.upper()]
+        self.input_mode = (
+            SignalIA.InputMode[input_mode.upper()]
+            if isinstance(input_mode, str)
+            else input_mode
+        )
 
         self.map_freq = map_freq
         self.num_frequency_bands = num_frequency_bands
         self.max_enum = max_enum
-        num_input_channels = {
+        num_input_channels += {
             SignalIA.InputMode.RAW: 2,
             SignalIA.InputMode.FPOS: num_frequency_bands * 4,
         }[self.input_mode]
 
-        if self.class_mode == SignalIA.ClassMode.ONEHOT:
-            num_input_channels += max_enum
-        elif self.class_mode == SignalIA.ClassMode.SCALAR:
-            num_input_channels += 1
-        else:
-            raise NotImplementedError(f"Unrecognised class mode {self.class_mode}")
-
         super().__init__(num_input_channels)
 
-    def forward(self, x: Tensor, pad_mask: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self, x: Tensor, pad_mask: Tensor | None = None
+    ) -> Tuple[Tensor, Tensor | None]:
         """X input tensor is [x,y,state]"""
-        if self.input_mode == SignalIA.InputMode.FPOS:
-            enc_x = _sample_frequency_band(
-                x,
-                num_frequency_bands=self.num_frequency_bands,
-                max_frequencies=[self.map_freq, self.map_freq],
-                include_positions=False,
-            )
-        elif self.input_mode == SignalIA.InputMode.RAW:
-            enc_x = x[..., 0:2]  # Only grab x,y
-        else:
-            raise NotImplementedError(f"Unsupported input mode {self.input_mode}")
+        match self.input_mode:
+            case SignalIA.InputMode.FPOS:
+                enc_x = _sample_frequency_band(
+                    x,
+                    num_frequency_bands=self.num_frequency_bands,
+                    max_frequencies=(self.map_freq, self.map_freq),
+                    include_positions=False,
+                )
+            case SignalIA.InputMode.RAW:
+                enc_x = x[..., 0:2]  # Only grab x,y
 
-        if self.class_mode == SignalIA.ClassMode.ONEHOT:
-            # n classes = max_enum + 2 since -1 is invalid and 0 is none
-            onehot = torch.zeros(
-                [*enc_x.shape[0:2], self.max_enum + 2], device=enc_x.device
-            )
-            # add 1 to class values to shift from -1...max_enum to 0...max_enum + 1
-            onehot.scatter_(
-                2, x[..., [-1]].to(torch.int64) + 1, torch.ones_like(x[..., [-1]])
-            )
-            # skip [0,1] which is [invalid, none]
-            enc_x = torch.cat([enc_x, onehot[..., 2:]], dim=-1)
-        elif self.class_mode == SignalIA.ClassMode.SCALAR:
-            enc_x = torch.cat([enc_x, x[..., [-1]]], dim=-1)
-        else:
-            raise NotImplementedError(f"Unsupported class mode {self.class_mode}")
+        match self.class_mode:
+            case SignalIA.ClassMode.ONEHOT:
+                # n classes = max_enum + 2 since -1 is invalid and 0 is none
+                onehot = torch.zeros(
+                    [*enc_x.shape[0:2], self.max_enum + 2], device=enc_x.device
+                )
+                # add 1 to class values to shift from -1...max_enum to 0...max_enum + 1
+                onehot.scatter_(
+                    2, x[..., [-1]].to(torch.int64) + 1, torch.ones_like(x[..., [-1]])
+                )
+                # skip [0,1] which is [invalid, none]
+                enc_x = torch.cat([enc_x, onehot[..., 2:]], dim=-1)
+            case SignalIA.ClassMode.SCALAR:
+                enc_x = torch.cat([enc_x, x[..., [-1]]], dim=-1)
+            case SignalIA.ClassMode.NONE:
+                pass
 
         # ensure that at least one dummy token isn't masked to prevent NaN's
         enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
-        pad_mask = torch.cat([pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1)
+
+        if pad_mask is not None:
+            pad_mask = torch.cat([pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1)
 
         return enc_x, pad_mask

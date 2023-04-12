@@ -5,7 +5,7 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 
 
 class OutputAdapter(nn.Module):
@@ -42,7 +42,7 @@ class ClassificationOA(OutputAdapter):
         super().__init__(output_shape=(num_outputs, num_output_channels))
         self.linear = nn.Linear(num_output_channels, num_classes)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return self.linear(x).squeeze(dim=1)
 
 
@@ -68,8 +68,8 @@ class SegmentationOA(OutputAdapter):
     def __init__(
         self,
         num_classes: int,
-        image_shape: List[int] = None,
-        num_output_channels: Optional[int] = None,
+        image_shape: List[int] | None = None,
+        num_output_channels: int | None = None,
     ):
         if num_output_channels is None:
             num_output_channels = num_classes
@@ -77,7 +77,9 @@ class SegmentationOA(OutputAdapter):
         self.image_shape = [512, 1024] if image_shape is None else image_shape
         self.num_classes = num_classes
 
-        super().__init__(output_shape=(math.prod(image_shape), num_output_channels))
+        super().__init__(
+            output_shape=(math.prod(self.image_shape), num_output_channels)
+        )
         self.linear = nn.Linear(num_output_channels, num_classes)
 
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:

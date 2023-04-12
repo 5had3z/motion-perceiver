@@ -5,7 +5,7 @@ from konductor.modules.data import get_dataset_properties
 from konductor.modules.models import MODEL_REGISTRY, ExperimentInitConfig
 from konductor.modules.models._pytorch import TorchModelConfig
 
-from .motion_perceiver import MotionPerceiver
+from .motion_perceiver import MotionPerceiver, MotionPercieverWSignals
 
 
 @dataclass
@@ -13,6 +13,7 @@ from .motion_perceiver import MotionPerceiver
 class MotionPerceiverConfig(TorchModelConfig):
     encoder: Dict[str, Any]
     decoder: Dict[str, Any]
+    signal_decoder: bool = False
 
     @classmethod
     def from_config(cls, config: ExperimentInitConfig, idx: int = 0) -> Any:
@@ -31,4 +32,5 @@ class MotionPerceiverConfig(TorchModelConfig):
         return super().from_config(config)
 
     def get_instance(self, *args, **kwargs) -> Any:
-        return self._apply_extra(MotionPerceiver(self.encoder, self.decoder))
+        model_ = MotionPercieverWSignals if self.signal_decoder else MotionPerceiver
+        return self._apply_extra(model_(self.encoder, self.decoder))

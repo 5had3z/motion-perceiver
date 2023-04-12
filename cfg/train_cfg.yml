@@ -1,9 +1,9 @@
 dataset:
   - type: waymo_motion
     args:
-      map_normalize: 60.0
+      map_normalize: 80.0
       full_sequence: true
-      occupancy_size: 384
+      occupancy_size: 256
       filter_future: true
       signal_features: true
       roadmap: true
@@ -12,22 +12,24 @@ dataset:
       waymo_eval_frame: true
       heatmap_time: [0, 10]
       random_heatmap_minmax: [1, 60]
-      random_heatmap_count: 4
+      random_heatmap_count: 3
+      only_vehicles: true
+      occupancy_roi: 0.5
     loader:
       type: DALI
       args:
-        batch_size: 2
+        batch_size: 8
         drop_last: true
 criterion:
   - type: occupancy_focal
     args:
-      alpha: 0.75
+      alpha: 0.95
 model:
   - type: motion-perceiver
     args:
-      pretrained: 7403233af8c7b2e1009c1aa35a7b0254.pth
+      signal_decoder: true
       encoder:
-        version: 6
+        version: 7
         num_latents: 128
         num_latent_channels: 256
         input_indicies: [0, 5, 10]
@@ -35,9 +37,8 @@ model:
         adapter:
           type: vehicle
           args:
-            class_onehot: true
             input_mode: fpos_extra
-            num_frequency_bands: 64
+            num_frequency_bands: 32
         signal_ia:
           type: signal
           args:
