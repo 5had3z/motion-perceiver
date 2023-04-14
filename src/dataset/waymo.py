@@ -285,14 +285,12 @@ def waymo_motion_pipe(
             data[key] /= cfg.map_normalize
 
         # x and y are within the ROI
-        data["valid"] = (
-            data["valid"] * (dmath.abs(data["x"]) < 1) * (dmath.abs(data["y"]) < 1)
-        )
+        data["valid"] *= (dmath.abs(data["x"]) < 1) * (dmath.abs(data["y"]) < 1)
 
-    if "bbox_yaw" in data:  # normalize angle bewteen -/+ pi
+    if "bbox_yaw" in data:  # normalize angle bewteen [-1,1]
         data["bbox_yaw"] = dmath.atan2(
             dmath.sin(data["bbox_yaw"]), dmath.cos(data["bbox_yaw"])
-        )
+        ) / Constant(math.pi, dtype=DALIDataType.FLOAT)
 
         if cfg.waymo_eval_frame:  # flip sign
             data["bbox_yaw"] *= -1
@@ -411,7 +409,7 @@ def waymo_motion_pipe(
             fn.occupancy_mask(
                 data["x"],
                 data["y"],
-                data["bbox_yaw"],
+                data["bbox_yaw"] * Constant(math.pi, dtype=DALIDataType.FLOAT),
                 data["width"],
                 data["length"],
                 data["valid"],

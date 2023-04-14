@@ -3,7 +3,7 @@
 
 import math
 import enum
-from typing import List, Optional, Tuple
+from typing import Dict, List, Tuple, Sequence
 
 import einops
 import torch
@@ -37,7 +37,7 @@ def _generate_positions_for_encoding(spatial_shape, v_min=-1.0, v_max=1.0):
 def _generate_position_encodings(
     p: Tensor,
     num_frequency_bands: int,
-    max_frequencies: Optional[Tuple[int, ...]] = None,
+    max_frequencies: Sequence[int] | None = None,
     include_positions: bool = True,
 ) -> Tensor:
     """Fourier-encode positions p using num_frequency_bands.
@@ -78,7 +78,7 @@ def _generate_position_encodings(
 def _sample_frequency_band(
     p: Tensor,
     num_frequency_bands: int,
-    max_frequencies: Optional[Tuple[int, ...]] = None,
+    max_frequencies: Sequence[int],
     include_positions: bool = True,
 ) -> Tensor:
     """
@@ -134,7 +134,7 @@ class ImageIA(InputAdapter):
         image_shape: Tuple[int, ...],
         num_frequency_bands: int,
         patchify: int = 1,
-        conv_1x1: int = None,
+        conv_1x1: int | None = None,
         in_channels: int = 3,
     ):
         num_image_channels, *self.spatial_shape = image_shape
@@ -283,15 +283,17 @@ class TrafficIA(InputAdapter):
         self.num_frequency_bands = num_frequency_bands
         super().__init__(num_input_channels)
 
-    def forward(self, x: Tensor, pad_mask: Tensor | None = None) -> Tensor:
+    def forward(
+        self, x: Tensor, pad_mask: Tensor | None = None
+    ) -> Tuple[Tensor, Tensor | Dict[str, Tensor] | None]:
         """Pad mask is true for masked values for pytorch, we want the opposite in IA"""
         if self.input_mode == TrafficIA.InputMode.RAW:
-            return x
+            return x, pad_mask
 
         enc_x = _sample_frequency_band(
             x,
             num_frequency_bands=self.num_frequency_bands,
-            max_frequencies=[self.map_freq, self.map_freq, self.yaw_freq],
+            max_frequencies=(self.map_freq, self.map_freq, self.yaw_freq),
             include_positions=False,
         )
         if self.input_mode == TrafficIA.InputMode.FPOS_EXTRA:
@@ -316,7 +318,7 @@ class TrafficIA(InputAdapter):
             assert pad_mask is not None
 
             cls_mask = x[..., [-1]].to(torch.int64) + 1
-            pad_mask_ = {}
+            pad_mask_: Dict[str, Tensor] = {}
             for idx, cls_name in enumerate(self.class_names, 2):
                 pad_mask_[cls_name] = (cls_mask != idx).squeeze(-1) | pad_mask
 

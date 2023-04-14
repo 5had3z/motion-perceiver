@@ -284,17 +284,7 @@ def statistic_evaluation(
                 break
 
             data: Dict[str, Tensor] = data[0]  # remove list dimension
-
-            pos_args = []
-            for arg in arg_order:
-                pos_args.append(data[arg] if arg in data else torch.empty([]))
-            pos_args = tuple(pos_args)
-
-            # if not isinstance(model, torch.jit.ScriptModule):
-            #     print("Tracing Pytorch Model to improve speed")
-            #     model = torch.jit.trace(model, pos_args, strict=False)
-
-            outputs = model(*pos_args)
+            outputs = model(**data)
             for key in outputs:
                 outputs[key][outputs[key] < 0] *= 8.0
 
