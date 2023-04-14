@@ -8,7 +8,7 @@ import torch
 from torch import nn, Tensor
 
 from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA
-from ._oadapter import HeatmapOA, ClassHeatmapOA, ClassificationOA, OutputAdapter
+from ._oadapter import HeatmapOA, ClassHeatmapOA, ClassificationOA
 from . import perceiver_io as pio
 
 
@@ -82,10 +82,7 @@ class MotionEncoder(nn.Module):
         raise NotImplementedError()
 
     def forward(
-        self,
-        output_idx: Tensor,
-        agents: Tensor,
-        agents_mask: Optional[Tensor] = None,
+        self, output_idx: Tensor, agents: Tensor, agents_mask: Tensor
     ) -> List[Tensor]:
         """Given an input of dims [Time Batch Tokens Channels]"""
 
@@ -263,10 +260,7 @@ class MotionEncoder3(MotionEncoder):
         raise NotImplementedError()
 
     def forward(
-        self,
-        output_idx: Tensor,
-        agents: Tensor,
-        agents_mask: Optional[Tensor] = None,
+        self, output_idx: Tensor, agents: Tensor, agents_mask: Tensor
     ) -> List[Tensor]:
         """Given an input of dims [Time Batch Tokens Channels]"""
 
@@ -318,8 +312,8 @@ class MotionEncoder3Ctx(MotionEncoder3):
         *args,
         num_cross_attention_heads: int = 4,
         dropout: float = 0,
-        roadgraph_ia: Dict[str, Any] = None,
-        signal_ia: Dict[str, Any] = None,
+        roadgraph_ia: Dict[str, Any] | None = None,
+        signal_ia: Dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -330,11 +324,7 @@ class MotionEncoder3Ctx(MotionEncoder3):
         )
 
         if signal_ia is not None:
-            self.signal_encoder = (
-                pio.mlp(signal_ia["channels"])
-                if signal_ia["type"] == "mlp"
-                else SignalIA(**signal_ia["args"])
-            )
+            self.signal_encoder = SignalIA(**signal_ia["args"])
 
             self.signal_attn = pio.Sequential(
                 pio.cross_attention_layer(
@@ -354,11 +344,7 @@ class MotionEncoder3Ctx(MotionEncoder3):
             self.signal_attn = None
 
         if roadgraph_ia is not None:
-            self.roadgraph_encoder = (
-                pio.mlp(roadgraph_ia["channels"])
-                if roadgraph_ia["type"] == "mlp"
-                else ImageIA(**roadgraph_ia["args"])
-            )
+            self.roadgraph_encoder = ImageIA(**roadgraph_ia["args"])
 
             self.road_attn = pio.Sequential(
                 pio.cross_attention_layer(
@@ -450,10 +436,10 @@ class MotionEncoder3Ctx(MotionEncoder3):
         output_idx: Tensor,
         agents: Tensor,
         agents_mask: Tensor,
-        roadgraph: Tensor = None,
-        roadgraph_mask: Tensor = None,
-        signals: Tensor = None,
-        signals_mask: Tensor = None,
+        roadgraph: Tensor | None = None,
+        roadgraph_mask: Tensor | None = None,
+        signals: Tensor | None = None,
+        signals_mask: Tensor | None = None,
     ) -> List[Tensor]:
         """Given an input of dims [Time Batch Tokens Channels]"""
 
@@ -600,9 +586,7 @@ class _CrossAttnWContext(nn.Module):
     """Allows to inject roadgraph features in the self
     attention after the cross-attention"""
 
-    def __init__(
-        self, cross_attn: pio.CrossAttention, self_attn: pio.SelfAttentionStaticFeatures
-    ) -> None:
+    def __init__(self, cross_attn: nn.Sequential, self_attn: nn.Sequential) -> None:
         super().__init__()
         self.cross_attn = cross_attn
         self.self_attn = self_attn
@@ -636,14 +620,14 @@ class MotionEncoderContext(nn.Module):
         num_latents: int,
         num_latent_channels: int,
         input_indicies: List[int],
+        roadgraph_ia: Dict[str, Any],
+        signal_ia: Dict[str, Any],
         num_cross_attention_heads: int = 4,
         num_self_attention_heads: int = 4,
         num_self_attention_layers_per_block: int = 6,
         dropout: float = 0.0,
         detach_latent: bool = False,
         prop_layer_norm: bool = False,
-        roadgraph_ia: Dict[str, Any] | None = None,
-        signal_ia: Dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
 
@@ -897,12 +881,7 @@ class MotionEncoderParallel(nn.Module):
         """Export to onnx file"""
         raise NotImplementedError()
 
-    def forward(
-        self,
-        output_idx: Tensor,
-        agents: Tensor,
-        agents_mask: Optional[Tensor] = None,
-    ):
+    def forward(self, output_idx: Tensor, agents: Tensor, agents_mask: Tensor):
         """"""
         # repeat initial latent vector along batch dimension
         latents: Dict[str, Tensor] = {

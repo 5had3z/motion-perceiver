@@ -29,6 +29,15 @@ class MotionPerceiverConfig(TorchModelConfig):
         model_cfg["decoder"]["adapter"]["args"]["image_shape"] = [sz, sz]
         model_cfg["decoder"]["position_encoding_limit"] = props["occupancy_roi"]
 
+        # Handle standardization of position encoding relative to map size
+        max_freq = props["map_normalize"] * 2
+        model_cfg["decoder"]["max_frequency"] = max_freq
+        model_cfg["encoder"]["adapter"]["args"]["map_max_freq"] = max_freq
+        if "signal_ia" in model_cfg["encoder"]:
+            model_cfg["encoder"]["signal_ia"]["args"]["max_frequency"] = max_freq
+        if "roadgraph_ia" in model_cfg["encoder"]:
+            model_cfg["encoder"]["roadgraph_ia"]["args"]["max_frequency"] = max_freq
+
         return super().from_config(config)
 
     def get_instance(self, *args, **kwargs) -> Any:

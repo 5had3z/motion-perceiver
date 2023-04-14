@@ -318,7 +318,8 @@ class PerceiverDecoder(nn.Module):
         position_encoding_limit: float = 1.0,
         residule_query: bool = True,
         position_encoding_type: str = "learnable",
-        num_frequency_bands: Optional[int] = None,
+        num_frequency_bands: int | None = None,
+        max_frequency: float | None = None,
     ):
         """
         :param output_adapter: Transforms generic decoder output of shape (B, K, C_output)
@@ -354,14 +355,17 @@ class PerceiverDecoder(nn.Module):
                 v_max=position_encoding_limit,
             )
             enc = _generate_position_encodings(
-                pos, num_frequency_bands, include_positions=False
+                pos,
+                num_frequency_bands,
+                None if max_frequency is None else [max_frequency] * 2,
+                include_positions=False,
             )
             # flatten encodings along spatial dimensions
             enc = einops.rearrange(enc, "... c -> (...) c")
             self.register_buffer("output", enc, persistent=False)
             query_channels = enc.shape[-1]
         else:
-            raise NotImplementedError(f"{position_encoding_type = }")
+            raise NotImplementedError(f"{position_encoding_type=}")
 
         self.cross_attention = cross_attention_layer(
             num_q_channels=query_channels,

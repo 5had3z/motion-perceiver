@@ -4,6 +4,7 @@
 import math
 import enum
 from typing import Dict, List, Tuple, Sequence
+from warnings import warn
 
 import einops
 import torch
@@ -37,7 +38,7 @@ def _generate_positions_for_encoding(spatial_shape, v_min=-1.0, v_max=1.0):
 def _generate_position_encodings(
     p: Tensor,
     num_frequency_bands: int,
-    max_frequencies: Sequence[int] | None = None,
+    max_frequencies: Sequence[float] | None = None,
     include_positions: bool = True,
 ) -> Tensor:
     """Fourier-encode positions p using num_frequency_bands.
@@ -77,8 +78,8 @@ def _generate_position_encodings(
 
 def _sample_frequency_band(
     p: Tensor,
-    num_frequency_bands: int,
-    max_frequencies: Sequence[int],
+    num_frequency_bands: Sequence[int],
+    max_frequencies: Sequence[float],
     include_positions: bool = True,
 ) -> Tensor:
     """
@@ -87,8 +88,8 @@ def _sample_frequency_band(
     """
 
     frequencies = [
-        torch.linspace(1.0, max_freq / 2.0, num_frequency_bands, device=p.device)
-        for max_freq in max_frequencies
+        torch.linspace(1.0, max_freq / 2.0, num_bands, device=p.device)
+        for num_bands, max_freq in zip(num_frequency_bands, max_frequencies)
     ]
 
     frequency_grids = []
@@ -133,6 +134,7 @@ class ImageIA(InputAdapter):
         self,
         image_shape: Tuple[int, ...],
         num_frequency_bands: int,
+        max_frequency: float | None = None,
         patchify: int = 1,
         conv_1x1: int | None = None,
         in_channels: int = 3,
@@ -162,7 +164,11 @@ class ImageIA(InputAdapter):
 
         # create encodings for single example
         pos = _generate_positions_for_encoding(self.spatial_shape)
-        enc = _generate_position_encodings(pos, self.num_frequency_bands)
+        enc = _generate_position_encodings(
+            pos,
+            self.num_frequency_bands,
+            None if max_frequency is None else [max_frequency] * 2,
+        )
 
         # flatten encodings along spatial dimensions
         enc = einops.rearrange(enc, "... c -> (...) c")
@@ -251,12 +257,22 @@ class TrafficIA(InputAdapter):
     def __init__(
         self,
         input_mode: str,
-        map_freq: int = 200,
-        yaw_freq: int = 16,
+        map_max_freq: float = 200,
+        yaw_max_freq: float = 16,
+        map_n_bands: int = 0,
+        yaw_n_bands: int = 0,
         num_frequency_bands: int = 32,
         class_onehot: bool = False,
         class_names: List[str] | None = None,
     ):
+        if any(n == 0 for n in [yaw_n_bands, map_n_bands]):
+            warn(
+                "Using num_frequency_bands is depricated,"
+                "please use individual map and yaw arguments"
+            )
+            map_n_bands = num_frequency_bands
+            yaw_n_bands = num_frequency_bands
+
         self.input_mode = TrafficIA.InputMode[input_mode.upper()]
 
         if class_onehot:
@@ -271,16 +287,17 @@ class TrafficIA(InputAdapter):
         # raw = input data x,y,t,dx,dt,dt,l,h
         num_input_channels = {
             TrafficIA.InputMode.RAW: 8,
-            TrafficIA.InputMode.FPOS: num_frequency_bands * 3 * 2,
-            TrafficIA.InputMode.FPOS_EXTRA: num_frequency_bands * 3 * 2 + 5,
+            TrafficIA.InputMode.FPOS: (map_n_bands * 2 + yaw_n_bands) * 2,
+            TrafficIA.InputMode.FPOS_EXTRA: (map_n_bands * 2 + yaw_n_bands) * 2 + 5,
         }[self.input_mode]
 
         if self.class_mode == TrafficIA.ClassMode.ONEHOT:
             num_input_channels += 3  # 3 classes
 
-        self.yaw_freq = yaw_freq
-        self.map_freq = map_freq
-        self.num_frequency_bands = num_frequency_bands
+        self.yaw_max_freq = yaw_max_freq
+        self.yaw_n_bands = yaw_n_bands
+        self.map_max_freq = map_max_freq
+        self.map_n_bands = map_n_bands
         super().__init__(num_input_channels)
 
     def forward(
@@ -292,8 +309,8 @@ class TrafficIA(InputAdapter):
 
         enc_x = _sample_frequency_band(
             x,
-            num_frequency_bands=self.num_frequency_bands,
-            max_frequencies=(self.map_freq, self.map_freq, self.yaw_freq),
+            num_frequency_bands=(self.map_n_bands, self.map_n_bands, self.yaw_n_bands),
+            max_frequencies=(self.map_max_freq, self.map_max_freq, self.yaw_max_freq),
             include_positions=False,
         )
         if self.input_mode == TrafficIA.InputMode.FPOS_EXTRA:
@@ -354,7 +371,7 @@ class SignalIA(InputAdapter):
     def __init__(
         self,
         input_mode: str | InputMode,
-        map_freq: int = 200,
+        max_frequency: float = 200.0,
         num_frequency_bands: int = 32,
         max_enum: int = 8,
         onehot: bool = False,
@@ -376,7 +393,7 @@ class SignalIA(InputAdapter):
             else input_mode
         )
 
-        self.map_freq = map_freq
+        self.max_frequency = max_frequency
         self.num_frequency_bands = num_frequency_bands
         self.max_enum = max_enum
         num_input_channels += {
@@ -394,8 +411,8 @@ class SignalIA(InputAdapter):
             case SignalIA.InputMode.FPOS:
                 enc_x = _sample_frequency_band(
                     x,
-                    num_frequency_bands=self.num_frequency_bands,
-                    max_frequencies=(self.map_freq, self.map_freq),
+                    num_frequency_bands=[self.num_frequency_bands] * 2,
+                    max_frequencies=[self.max_frequency] * 2,
                     include_positions=False,
                 )
             case SignalIA.InputMode.RAW:
