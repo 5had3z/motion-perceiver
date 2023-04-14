@@ -11,6 +11,12 @@ RUN pip3 install \
     einops==0.6.0 \
     scipy==1.10.0
 
+# COMMIT arg is Required for training tracking purposes
+# Use --build-arg COMMIT="$(git rev-parse --short HEAD)"
+ARG COMMIT
+RUN [ ! -z "${COMMIT}" ]
+ENV COMMIT_SHA=${COMMIT}
+
 COPY . /home/worker
 WORKDIR /home/worker
 RUN cd src/dataset/plugins && sh makeplugins.sh

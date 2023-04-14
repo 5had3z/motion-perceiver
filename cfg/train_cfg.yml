@@ -40,13 +40,15 @@ model:
           type: vehicle
           args:
             input_mode: fpos_extra
-            num_frequency_bands: 32
+            map_n_bands: 32
+            yaw_n_bands: 8
+            yaw_max_freq: 16.0
         signal_ia:
           type: signal
           args:
             onehot: true
             input_mode: fpos
-            num_frequency_bands: 30
+            num_frequency_bands: 32
         roadgraph_ia:
           type: image
           args:
