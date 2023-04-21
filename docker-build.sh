@@ -4,5 +4,5 @@ gitsha="$(git rev-parse --short HEAD)"
 echo $tag
 echo $gitsha
 
-docker build . -t WITHHELD/mp:$tag --build-arg COMMIT=$gitsha
-docker push WITHHELD/mp:$tag
+docker build . -t $REGISTRY_URL/mp:$tag --build-arg COMMIT=$gitsha
+docker push $REGISTRY_URL/mp:$tag

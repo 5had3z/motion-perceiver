@@ -11,6 +11,7 @@ def main():
     parser.add_argument("-s", "--workspace", type=Path)
     parser.add_argument("-x", "--run_hash", type=str)
     parser.add_argument("-c", "--config_file", type=Path)
+    parser.add_argument("--remote", help="DO NOT USE")
     parser.add_argument("--split", type=str, choices=["test", "val"])
 
     subparsers = parser.add_subparsers(dest="command")

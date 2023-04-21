@@ -41,7 +41,7 @@ class Trainer(PyTorchTrainer):
             for criterion in self.modules.criterion:
                 losses.update(criterion(pred, data))
 
-        return losses, None
+        return losses, pred
 
     def val_step(
         self, data: Dict[str, Tensor]
@@ -57,7 +57,11 @@ class Trainer(PyTorchTrainer):
         with record_function("eval_inference"):
             pred = self.modules.model(**data)
 
-        return None, pred
+        losses = {}
+        for criterion in self.modules.criterion:
+            losses.update(criterion(pred, data))
+
+        return losses, pred
 
 
 def setup(cli_args: NS) -> Trainer:
