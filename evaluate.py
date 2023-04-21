@@ -159,7 +159,7 @@ def write_video_batch(
     else:
         roadmap_batch = [None for _ in range(bz)]
 
-    for cls_idx, cls_name in enumerate(pred):
+    for cls_idx, cls_name in enumerate(p for p in pred if "heatmap" in p):
         for b_idx, (sample, pred_cls, roadmap) in enumerate(
             zip(data["heatmap"][:, cls_idx], pred[cls_name], roadmap_batch)
         ):
