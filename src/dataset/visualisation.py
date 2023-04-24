@@ -39,8 +39,8 @@ def sequence(data: Dict[str, Tensor]) -> None:
                 plt.arrow(xytvxvy[0], xytvxvy[1], dx, dy, width=0.005, color="b")
 
                 # Check Headding
-                dx = 0.02 * np.cos(xytvxvy[2])
-                dy = 0.02 * np.sin(xytvxvy[2])
+                dx = 0.02 * np.cos(np.pi * xytvxvy[2])
+                dy = 0.02 * np.sin(np.pi * xytvxvy[2])
                 plt.arrow(xytvxvy[0], xytvxvy[1], dx, dy, width=0.005, color="r")
 
         plt.tight_layout()

@@ -261,6 +261,7 @@ class TrafficIA(InputAdapter):
         yaw_max_freq: float = 16,
         map_n_bands: int = 0,
         yaw_n_bands: int = 0,
+        heading_encoding: bool = True,
         num_frequency_bands: int = 32,
         class_onehot: bool = False,
         class_names: List[str] | None = None,
@@ -298,6 +299,7 @@ class TrafficIA(InputAdapter):
         self.yaw_n_bands = yaw_n_bands
         self.map_max_freq = map_max_freq
         self.map_n_bands = map_n_bands
+        self.heading_encoding = heading_encoding
         super().__init__(num_input_channels)
 
     def forward(
@@ -307,14 +309,20 @@ class TrafficIA(InputAdapter):
         if self.input_mode == TrafficIA.InputMode.RAW:
             return x, pad_mask
 
+        num_frequency_bands = [self.map_n_bands] * 2
+        max_frequencies = [self.map_max_freq] * 2
+        if self.heading_encoding:
+            num_frequency_bands.append(self.yaw_n_bands)
+            max_frequencies.append(self.yaw_max_freq)
+
         enc_x = _sample_frequency_band(
-            x,
-            num_frequency_bands=(self.map_n_bands, self.map_n_bands, self.yaw_n_bands),
-            max_frequencies=(self.map_max_freq, self.map_max_freq, self.yaw_max_freq),
-            include_positions=False,
+            x, num_frequency_bands, max_frequencies, include_positions=False
         )
+
         if self.input_mode == TrafficIA.InputMode.FPOS_EXTRA:
-            enc_x = torch.cat([enc_x, x[..., 3:8]], dim=-1)
+            enc_x = torch.cat(
+                [enc_x, x[..., 3:8] if self.heading_encoding else x[..., 2:8]], dim=-1
+            )
 
         if self.class_mode == TrafficIA.ClassMode.ONEHOT:
             onehot = torch.zeros([*enc_x.shape[0:2], 6], device=enc_x.device)
