@@ -295,6 +295,9 @@ class TrafficIA(InputAdapter):
         if self.class_mode == TrafficIA.ClassMode.ONEHOT:
             num_input_channels += 3  # 3 classes
 
+        if not self.heading_encoding:  # remove n_yaw_bands and add single channel
+            num_input_channels += 1 - 2 * yaw_n_bands
+
         self.yaw_max_freq = yaw_max_freq
         self.yaw_n_bands = yaw_n_bands
         self.map_max_freq = map_max_freq
