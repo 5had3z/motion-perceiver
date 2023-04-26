@@ -3,7 +3,7 @@ FROM WITHHELD/konductor:pytorch-main
 # Install opencv 4.5 for DALI
 USER root
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y libopencv-dev
+    DEBIAN_FRONTEND=noninteractive apt-get install -y libopencv-imgproc-dev
 
 # USER worker
 RUN pip3 install \

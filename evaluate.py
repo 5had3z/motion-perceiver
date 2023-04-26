@@ -377,7 +377,6 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
     parser = argparse.ArgumentParser()
     parser_add_common_args(parser)
     add_eval_args(parser)
-    parser.add_argument("-w", "--workers", type=int, default=4)
     args = parser.parse_args()
 
     exp_cfg = cli_init_config(args)
