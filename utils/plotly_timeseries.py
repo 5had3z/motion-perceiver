@@ -1,44 +1,30 @@
-# Run this app with `python app.py` and
-# visit http://127.0.0.1:8050/ in your web browser.
-
-from argparse import ArgumentParser
 from pathlib import Path
 from typing import List
 import difflib
 
 import pandas as pd
-from dash import Dash, html, dcc, Input, Output
+from dash import html, dcc, Input, Output, callback
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from konductor.webserver.utils import get_experiments
+from konductor.webserver.utils import EXPERIMENTS, get_experiments
 
+from .plot_utils import gather_experiment_time_performance
 
-from plot_utils import gather_experiment_time_performance
-
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-parser = ArgumentParser()
-parser.add_argument("--root", type=Path, default=Path.cwd())
-args = parser.parse_args()
-experiments = get_experiments(args.root)
-
-app.layout = html.Div(
+layout = html.Div(
     children=[
         html.H1(children="Motion Perceiver"),
         dbc.Row(
             [
                 dcc.Dropdown(id="dd-metric", options=["IoU", "AUC"]),
-                dcc.Graph(id="line-graph", selectedData={}),
+                dcc.Graph(id="timeseries-graph", selectedData={}),
             ]
         ),
         dbc.Row(
             [
                 dbc.Col(
                     [
-                        dcc.Dropdown(
-                            id="left-select", options=[e.name for e in experiments]
-                        ),
+                        dcc.Dropdown(id="left-select"),
                         dcc.Textarea(
                             id="left-comp",
                             readOnly=True,
@@ -58,9 +44,7 @@ app.layout = html.Div(
                 ),
                 dbc.Col(
                     [
-                        dcc.Dropdown(
-                            id="right-select", options=[e.name for e in experiments]
-                        ),
+                        dcc.Dropdown(id="right-select"),
                         dcc.Textarea(
                             id="right-comp",
                             readOnly=True,
@@ -74,8 +58,19 @@ app.layout = html.Div(
 )
 
 
-@app.callback(
-    Output("line-graph", "figure"),
+@callback(
+    Output("left-select", "options"),
+    Output("right-select", "options"),
+    Input("root-dir", "data"),
+)
+def init_exp_foo(root_dir: str):
+    get_experiments(Path(root_dir))
+    opts = [e.name for e in EXPERIMENTS]
+    return opts, opts
+
+
+@callback(
+    Output("timeseries-graph", "figure"),
     Input("dd-metric", "value"),
 )
 def update_graph(metric: str):
@@ -83,7 +78,7 @@ def update_graph(metric: str):
         raise PreventUpdate
 
     exps: List[pd.Series] = gather_experiment_time_performance(
-        experiments, "val", metric
+        EXPERIMENTS, "val", metric
     )
     if len(exps) == 0:
         raise PreventUpdate
@@ -97,27 +92,27 @@ def update_graph(metric: str):
     return fig
 
 
-@app.callback(Output("left-comp", "value"), Input("left-select", "value"))
+@callback(Output("left-comp", "value"), Input("left-select", "value"))
 def update_left(exp_name):
     if not exp_name:
         raise PreventUpdate
-    exp = next(x for x in experiments if x.name == exp_name)
+    exp = next(x for x in EXPERIMENTS if x.name == exp_name)
     with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
         s = f.read()
     return s
 
 
-@app.callback(Output("right-comp", "value"), Input("right-select", "value"))
+@callback(Output("right-comp", "value"), Input("right-select", "value"))
 def update_right(exp_name):
     if not exp_name:
         raise PreventUpdate
-    exp = next(x for x in experiments if x.name == exp_name)
+    exp = next(x for x in EXPERIMENTS if x.name == exp_name)
     with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
         s = f.read()
     return s
 
 
-@app.callback(
+@callback(
     Output("diff-comp", "value"),
     Input("left-select", "value"),
     Input("right-select", "value"),
@@ -126,18 +121,14 @@ def diff_files(left_file, right_file):
     if not all([left_file, right_file]):
         raise PreventUpdate
 
-    exp = next(x for x in experiments if x.name == left_file)
+    exp = next(x for x in EXPERIMENTS if x.name == left_file)
     with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
         left = f.readlines()
 
-    exp = next(x for x in experiments if x.name == right_file)
+    exp = next(x for x in EXPERIMENTS if x.name == right_file)
     with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
         right = f.readlines()
 
     diff = difflib.unified_diff(left, right, fromfile=left_file, tofile=right_file)
 
     return "".join([d for d in diff])
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
