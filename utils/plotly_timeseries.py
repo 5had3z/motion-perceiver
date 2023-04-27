@@ -66,7 +66,8 @@ layout = html.Div(
     Input("root-dir", "data"),
 )
 def init_exp(root_dir: str):
-    fill_experiments(Path(root_dir), EXPERIMENTS)
+    if len(EXPERIMENTS) == 0:
+        fill_experiments(Path(root_dir), EXPERIMENTS)
     opts = [e.name for e in EXPERIMENTS]
     return opts, opts
 
