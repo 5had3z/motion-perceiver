@@ -181,7 +181,7 @@ class ImageIA(InputAdapter):
             2 * self.num_frequency_bands + include_positions
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor):
         b, *d = x.shape
 
         if tuple(d) != self.image_shape:

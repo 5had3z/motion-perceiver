@@ -46,55 +46,6 @@ class ClassificationOA(OutputAdapter):
         return self.linear(x).squeeze(dim=1)
 
 
-class TextOA(ClassificationOA):
-    """blah"""
-
-    def __init__(
-        self,
-        vocab_size: int,
-        max_seq_len: int,
-        num_output_channels: Optional[int] = None,
-    ):
-        super().__init__(
-            num_classes=vocab_size,
-            num_outputs=max_seq_len,
-            num_output_channels=num_output_channels,
-        )
-
-
-class SegmentationOA(OutputAdapter):
-    """blah"""
-
-    def __init__(
-        self,
-        num_classes: int,
-        image_shape: List[int] | None = None,
-        num_output_channels: int | None = None,
-    ):
-        if num_output_channels is None:
-            num_output_channels = num_classes
-
-        self.image_shape = [512, 1024] if image_shape is None else image_shape
-        self.num_classes = num_classes
-
-        super().__init__(
-            output_shape=(math.prod(self.image_shape), num_output_channels)
-        )
-        self.linear = nn.Linear(num_output_channels, num_classes)
-
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        """Forward Impl.
-
-        :param x: input tensor
-        :return: semantic segmentation
-        """
-        out: torch.Tensor = self.linear(x)
-        out = out.permute(0, 2, 1)
-        out = out.reshape(x.shape[0], self.num_classes, *self.image_shape)
-
-        return {"seg": out}
-
-
 class HeatmapOA(OutputAdapter):
     """"""
 

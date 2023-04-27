@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Tuple, Set
 from pathlib import Path
 import random
 from functools import reduce
@@ -310,15 +310,18 @@ class MotionEncoder3Ctx(MotionEncoder3):
     def __init__(
         self,
         *args,
+        num_self_attention_layers_per_block: int = 6,
         num_cross_attention_heads: int = 4,
         dropout: float = 0,
         roadgraph_ia: Dict[str, Any] | None = None,
         signal_ia: Dict[str, Any] | None = None,
+        postproc_road: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(
             *args,
             num_cross_attention_heads=num_cross_attention_heads,
+            num_self_attention_layers_per_block=num_self_attention_layers_per_block,
             dropout=dropout,
             **kwargs,
         )
@@ -362,6 +365,20 @@ class MotionEncoder3Ctx(MotionEncoder3):
         else:
             self.roadgraph_encoder = None
             self.road_attn = None
+
+        if postproc_road:
+            assert (
+                self.roadgraph_encoder is not None
+            ), "Can't process roadgraph if there isn't one to begin with"
+
+            self.road_post = pio.self_attention_block(
+                num_layers=num_self_attention_layers_per_block,
+                num_channels=self.roadgraph_encoder.num_input_channels,
+                num_heads=num_cross_attention_heads,
+                dropout=dropout,
+            )
+        else:
+            self.road_post = None
 
     def onnx_export(self, path: Path) -> None:
         """Export to onnx file"""
@@ -431,13 +448,64 @@ class MotionEncoder3Ctx(MotionEncoder3):
 
         print(f"Finished {type(self).__name__} Export")
 
+    def get_input_indicies(
+        self,
+    ) -> Set[int]:
+        """get input indicies, randomly generate if required"""
+        input_indicies = self.input_indicies
+        if self.random_input_indicies > 0 and self.training:
+            candidates = list(range(min(input_indicies), max(input_indicies)))
+            random.shuffle(candidates)
+            input_indicies.update(candidates[: self.random_input_indicies])
+        return input_indicies
+
+    def encode_road(self, data: Tensor, mask: Tensor | None) -> Tuple[Tensor, Tensor]:
+        assert self.roadgraph_encoder is not None
+        enc: Tensor = self.roadgraph_encoder(data)
+
+        if mask is None:
+            mask = torch.ones(enc.shape[:-1], device=enc.device)
+
+        if self.road_post is not None:
+            enc = self.road_post(enc, mask)
+
+        return enc, mask
+
+    def process_timestep(
+        self,
+        tidx: int,
+        input_times: Set[int],
+        latent: Tensor,
+        agents: Tensor,
+        agents_mask: Tensor | None,
+        signals: Tensor | None,
+        signals_mask: Tensor | None,
+        road: Tensor | None,
+        road_mask: Tensor | None,
+    ) -> Tensor:
+        """Process latent at timestep t and return new latent"""
+        latent = self.propagate_layer(latent)
+
+        if tidx in input_times:
+            x_adapt, x_mask = self.input_adapter(agents[tidx], agents_mask[tidx])
+            latent = self.update_layer(latent, x_adapt, x_mask)
+
+            if self.signal_encoder is not None:
+                s_adapt, s_mask = self.signal_encoder(signals[tidx], signals_mask[tidx])
+                latent = self.signal_attn(latent, s_adapt, s_mask)
+
+        if self.road_attn is not None:
+            latent = self.road_attn(latent, road, road_mask)
+
+        return latent
+
     def forward(
         self,
         output_idx: Tensor,
         agents: Tensor,
         agents_mask: Tensor,
-        roadgraph: Tensor | None = None,
-        roadgraph_mask: Tensor | None = None,
+        road: Tensor | None = None,
+        road_mask: Tensor | None = None,
         signals: Tensor | None = None,
         signals_mask: Tensor | None = None,
     ) -> List[Tensor]:
@@ -450,12 +518,8 @@ class MotionEncoder3Ctx(MotionEncoder3):
         min_idx = min(self.input_indicies)
         out_latent = []
 
-        if self.roadgraph_encoder is not None:
-            enc_roadgraph = self.roadgraph_encoder(roadgraph)
-            if roadgraph_mask is None:
-                roadgraph_mask = torch.ones(
-                    enc_roadgraph.shape[:-1], device=enc_roadgraph.device
-                )
+        if road is not None:
+            enc_road, road_mask = self.encode_road(road, road_mask)
 
         x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
@@ -465,27 +529,20 @@ class MotionEncoder3Ctx(MotionEncoder3):
             if self.detach_latent and self.training:
                 x_latent = x_latent.detach().clone()
 
-        input_indicies = self.input_indicies
-        if self.random_input_indicies > 0 and self.training:
-            candidates = list(range(min(input_indicies), max(input_indicies)))
-            random.shuffle(candidates)
-            input_indicies.update(candidates[: self.random_input_indicies])
+        input_indicies = self.get_input_indicies()
 
         for t_idx in range(min_idx + 1, max_idx):
-            x_latent = self.propagate_layer(x_latent)
-
-            if t_idx in input_indicies:
-                x_adapt, x_mask = self.input_adapter(agents[t_idx], agents_mask[t_idx])
-                x_latent = self.update_layer(x_latent, x_adapt, x_mask)
-
-                if self.signal_encoder is not None:
-                    s_adapt, s_mask = self.signal_encoder(
-                        signals[t_idx], signals_mask[t_idx]
-                    )
-                    x_latent = self.signal_attn(x_latent, s_adapt, s_mask)
-
-            if self.road_attn is not None:
-                x_latent = self.road_attn(x_latent, enc_roadgraph, roadgraph_mask)
+            x_latent = self.process_timestep(
+                t_idx,
+                input_indicies,
+                x_latent,
+                agents,
+                agents_mask,
+                signals,
+                signals_mask,
+                enc_road,
+                road_mask,
+            )
 
             if t_idx in output_idx:
                 out_latent.append(x_latent)
@@ -498,7 +555,7 @@ class MotionEncoder3Ctx(MotionEncoder3):
         return out_latent
 
 
-class MotionEncodeer3CtxDetach(MotionEncoder3Ctx):
+class MotionEncoder3CtxDetach(MotionEncoder3Ctx):
     """Detach after every time step during training
     to increase training throughput with little penalty"""
 
@@ -507,8 +564,8 @@ class MotionEncodeer3CtxDetach(MotionEncoder3Ctx):
         output_idx: Tensor,
         agents: Tensor,
         agents_mask: Tensor,
-        roadgraph: Tensor | None = None,
-        roadgraph_mask: Tensor | None = None,
+        road: Tensor | None = None,
+        road_mask: Tensor | None = None,
         signals: Tensor | None = None,
         signals_mask: Tensor | None = None,
     ) -> List[Tensor]:
@@ -519,12 +576,8 @@ class MotionEncodeer3CtxDetach(MotionEncoder3Ctx):
         min_idx = min(self.input_indicies)
         out_latent = []
 
-        if self.roadgraph_encoder is not None:
-            enc_roadgraph = self.roadgraph_encoder(roadgraph)
-            if roadgraph_mask is None:
-                roadgraph_mask = torch.ones(
-                    enc_roadgraph.shape[:-1], device=enc_roadgraph.device
-                )
+        if road is not None:
+            enc_road, road_mask = self.encode_road(road, road_mask)
 
         x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
@@ -534,48 +587,24 @@ class MotionEncodeer3CtxDetach(MotionEncoder3Ctx):
             if self.detach_latent and self.training:
                 x_latent = x_latent.detach().clone()
 
-        input_indicies = self.input_indicies
-        if self.random_input_indicies > 0 and self.training:
-            candidates = list(range(min(input_indicies), max(input_indicies)))
-            random.shuffle(candidates)
-            input_indicies.update(candidates[: self.random_input_indicies])
+        input_indicies = self.get_input_indicies()
+
+        proc_args = (agents, agents_mask, signals, signals_mask, enc_road, road_mask)
 
         for t_idx in range(min_idx + 1, max_idx):
             if t_idx in output_idx:
-                x_latent = self.propagate_layer(x_latent)
-                if t_idx in input_indicies:
-                    x_adapt, x_mask = self.input_adapter(
-                        agents[t_idx], agents_mask[t_idx]
-                    )
-                    x_latent = self.update_layer(x_latent, x_adapt, x_mask)
-                    if self.signal_encoder is not None:
-                        s_adapt, s_mask = self.signal_encoder(
-                            signals[t_idx], signals_mask[t_idx]
-                        )
-                        x_latent = self.signal_attn(x_latent, s_adapt, s_mask)
-                if self.road_attn is not None:
-                    x_latent = self.road_attn(x_latent, enc_roadgraph, roadgraph_mask)
-
+                x_latent = self.process_timestep(
+                    t_idx, input_indicies, x_latent, *proc_args
+                )
                 out_latent.append(x_latent)
                 if self.detach_latent and self.training:
                     x_latent = x_latent.detach().clone()
             else:
                 with torch.no_grad():
-                    x_latent = self.propagate_layer(x_latent)
-                    if t_idx in input_indicies:
-                        x_adapt, x_mask = self.input_adapter(
-                            agents[t_idx], agents_mask[t_idx]
-                        )
-                        x_latent = self.update_layer(x_latent, x_adapt, x_mask)
-                        if self.signal_encoder is not None:
-                            s_adapt, s_mask = self.signal_encoder(
-                                signals[t_idx], signals_mask[t_idx]
-                            )
-                            x_latent = self.signal_attn(x_latent, s_adapt, s_mask)
-                    if self.road_attn is not None:
-                        x_latent = self.road_attn(
-                            x_latent, enc_roadgraph, roadgraph_mask
-                        )
+                    x_latent = self.process_timestep(
+                        t_idx, input_indicies, x_latent, *proc_args
+                    )
+
             if self.prop_layer_norm is not None:
                 x_latent = self.prop_layer_norm(x_latent)
 
@@ -790,7 +819,7 @@ class MotionEncoderParallel(nn.Module):
     def __init__(
         self,
         input_adapter: InputAdapter,
-        num_latents: Union[List[int], int],
+        num_latents: List[int] | int,
         num_latent_channels: int,
         class_names: List[str],
         input_indicies: List[int],
@@ -948,7 +977,7 @@ class MotionPerceiver(nn.Module):
             MotionEncoderParallel,
             MotionEncoder3,
             MotionEncoder3Ctx,
-            MotionEncodeer3CtxDetach,
+            MotionEncoder3CtxDetach,
         ][enc_version - 1](input_adapter=input_adapter, **encoder)
 
         # Setup Decoder
@@ -996,11 +1025,11 @@ class MotionPerceiver(nn.Module):
 
         if roadgraph is not None and roadgraph.size():
             assert roadgraph_valid is not None
-            kwargs["roadgraph"] = roadgraph
-            kwargs["roadgraph_mask"] = roadgraph_valid.bool()
+            kwargs["road"] = roadgraph
+            kwargs["road_mask"] = roadgraph_valid.bool()
 
         if roadmap is not None and roadmap.size():
-            kwargs["roadgraph"] = roadmap
+            kwargs["road"] = roadmap
 
         if signals is not None and signals.size():
             assert signals_valid is not None
@@ -1070,14 +1099,10 @@ class SignalDecoder(nn.Module):
 class MotionPercieverWSignals(MotionPerceiver):
     """Adds traffic signal prediction output for task"""
 
-    def __init__(
-        self,
-        encoder: Dict[str, Any],
-        decoder: Dict[str, Any],
-    ) -> None:
+    def __init__(self, encoder: Dict[str, Any], decoder: Dict[str, Any]) -> None:
         super().__init__(encoder, decoder)
         self.signal_decoder = SignalDecoder(
-            num_latent_channels=self.encoder.latent_dim, **decoder
+            num_latent_channels=self.encoder["latent_dim"], **decoder
         )
 
     def forward(

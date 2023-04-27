@@ -16,13 +16,7 @@ from ._iadapter import (
     _generate_position_encodings,
     _generate_positions_for_encoding,
 )
-from ._oadapter import (
-    OutputAdapter,
-    SegmentationOA,
-    ClassificationOA,
-    TextOA,
-    HeatmapOA,
-)
+from ._oadapter import OutputAdapter, ClassificationOA, HeatmapOA
 
 
 class Sequential(nn.Sequential):
@@ -402,112 +396,6 @@ class PerceiverDecoder(nn.Module):
             return outputs
 
         return self.aux_forward(x)
-
-
-class TextMasking(nn.Module):
-    """Text masking as described in https://arxiv.org/abs/1810.04805."""
-
-    def __init__(
-        self,
-        vocab_size: int,
-        unk_token_id: int = 1,
-        mask_token_id: int = 2,
-        num_special_tokens: int = 3,
-        mask_p: float = 0.15,
-    ):
-        super().__init__()
-        self.vocab_size = vocab_size
-        self.unk_token_id = unk_token_id
-        self.mask_token_id = mask_token_id
-        self.num_special_tokens = num_special_tokens
-        self.mask_p = mask_p
-
-    def forward(self, x, pad_mask):
-        """Forward impl."""
-        labels = x.clone()
-
-        # Mask special tokens in input (UNK, PAD)
-        is_special = x == self.unk_token_id
-        is_special |= pad_mask
-
-        # Mask non-special tokens
-        is_input = ~is_special
-
-        # Randomly select 15% of non-special tokens
-        is_selected = torch.rand_like(x, dtype=torch.float) < self.mask_p
-        is_selected &= is_input
-
-        # Of those, set 80% to MASK token, 10% to random token and leave 10% unchanged
-        is_selected_1 = is_selected & (torch.rand_like(x, dtype=torch.float) < 0.9)
-        is_selected_2 = is_selected_1 & (torch.rand_like(x, dtype=torch.float) < 1 / 9)
-        x[is_selected_1] = self.mask_token_id
-
-        # Based on the assumption that the id of the first
-        # non-special token is self.num_special_tokens
-        x[is_selected_2] = torch.randint(
-            self.num_special_tokens,
-            self.vocab_size,
-            size=(is_selected_2.sum(),),
-            device=x.device,
-        )
-
-        # ignore labels of non-selected elements
-        labels[~is_selected] = -100
-        return x, labels
-
-
-class PerceiverIO(nn.Module):
-    """Perciever IO Class."""
-
-    def __init__(
-        self,
-        encoder: Dict[str, Any],
-        decoder: Dict[str, Any],
-        masking: Dict[str, Any] = None,
-    ):
-        """
-        Perciever IO init method.
-
-        Args:
-            encoder (Dict[str, Any]): configuration dictionary for the encoder.
-            decoder (Dict[str, Any]): configuration dictionary for the decoder.
-
-        """
-        super().__init__()
-        in_adapt = encoder.pop("adapter")
-        input_adapter = {"image": ImageIA, "text": TextIA, "vehicle": TrafficIA}[
-            in_adapt["type"].lower()
-        ](**in_adapt["args"])
-        self.encoder = PerceiverEncoder(input_adapter=input_adapter, **encoder)
-
-        out_adapt = decoder.pop("adapter")
-        out_adapter = {
-            "segmentation": SegmentationOA,
-            "class": ClassificationOA,
-            "text": TextOA,
-            "heatmap": HeatmapOA,
-        }[out_adapt["type"].lower()](**out_adapt["args"])
-
-        if "num_latent_channels" in decoder:
-            del decoder["num_latent_channels"]  # remove depreciated arg
-
-        self.decoder = PerceiverDecoder(
-            output_adapter=out_adapter,
-            num_latent_channels=self.encoder.latent.shape[-1],
-            **decoder,
-        )
-
-        self.masking = TextMasking(**masking) if masking is not None else None
-
-    def forward(self, **inputs) -> Dict[str, torch.Tensor]:
-        """Forward impl."""
-
-        x_latent = self.encoder(
-            inputs["data"][..., 0, :], ~inputs["valid"][..., 0].bool()
-        )
-        x_logits = self.decoder(x_latent)
-
-        return x_logits
 
 
 def _show_latent(latent, logit, gt, idx):
