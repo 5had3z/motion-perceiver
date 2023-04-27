@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 
 import pandas as pd
-from konductor.webserver.utils import get_experiments, Experiment
+from konductor.webserver.utils import fill_experiments, Experiment
 
 
 def data_by_time(exp: Experiment, split: str, key: str) -> pd.Series:
@@ -42,7 +42,8 @@ def gather_experiment_time_performance(
 
 def debug() -> None:
     """dash is annoying to debug, lets separate debugging of functions that gather data"""
-    experiments = get_experiments(Path("/media/bryce/2TB_Seagate/motion-perceiver"))
+    experiments = []
+    fill_experiments(Path("/media/bryce/2TB_Seagate/motion-perceiver"), experiments)
     exp_perf = gather_experiment_time_performance(experiments, "val", "IoU")
     print(exp_perf)
 

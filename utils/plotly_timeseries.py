@@ -7,9 +7,11 @@ from dash import html, dcc, Input, Output, callback
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from konductor.webserver.utils import EXPERIMENTS, get_experiments
+from konductor.webserver.utils import Experiment, fill_experiments
 
 from .plot_utils import gather_experiment_time_performance
+
+EXPERIMENTS: List[Experiment] = []
 
 layout = html.Div(
     children=[
@@ -63,8 +65,8 @@ layout = html.Div(
     Output("right-select", "options"),
     Input("root-dir", "data"),
 )
-def init_exp_foo(root_dir: str):
-    get_experiments(Path(root_dir))
+def init_exp(root_dir: str):
+    fill_experiments(Path(root_dir), EXPERIMENTS)
     opts = [e.name for e in EXPERIMENTS]
     return opts, opts
 
