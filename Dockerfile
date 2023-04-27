@@ -1,9 +1,15 @@
 FROM WITHHELD/konductor:pytorch-main
 
-# Install opencv 4.5 for DALI
+# Install opencv 4.5 for DALI, only install imgproc
 USER root
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y libopencv-imgproc-dev
+WORKDIR /opt/opencv
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip
+RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.7.0.zip && \
+    unzip opencv.zip && \
+    cmake -B build -S opencv-4.7.0 -DBUILD_LIST=imgproc
+RUN cd build && make install -j$(nproc)
+WORKDIR /root
+RUN rm -r /opt/opencv
 
 # USER worker
 RUN pip3 install \
