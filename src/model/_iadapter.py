@@ -78,18 +78,21 @@ def _generate_position_encodings(
 
 def _sample_frequency_band(
     p: Tensor,
-    num_frequency_bands: Sequence[int],
-    max_frequencies: Sequence[float],
+    num_freq: Sequence[int],
+    max_freq: Sequence[float],
+    min_freq: Sequence[float] | None = None,
     include_positions: bool = True,
 ) -> Tensor:
     """
     Samples fourier encoding at a relative position coded such that
     three dimensions can be used for spatio-temporal vehicle input
     """
+    if min_freq is None:  # Default to 1hz
+        min_freq = [1.0] * len(num_freq)
 
     frequencies = [
-        torch.linspace(1.0, max_freq / 2.0, num_bands, device=p.device)
-        for num_bands, max_freq in zip(num_frequency_bands, max_frequencies)
+        torch.linspace(min_freq, max_freq / 2.0, num_bands, device=p.device)
+        for num_bands, min_freq, max_freq in zip(num_freq, min_freq, max_freq)
     ]
 
     frequency_grids = []
@@ -257,8 +260,9 @@ class TrafficIA(InputAdapter):
     def __init__(
         self,
         input_mode: str,
-        map_max_freq: float = 200,
-        yaw_max_freq: float = 16,
+        map_max_freq: float = 200.0,
+        yaw_min_freq: float = 1.0,
+        yaw_max_freq: float = 16.0,
         map_n_bands: int = 0,
         yaw_n_bands: int = 0,
         heading_encoding: bool = True,
@@ -298,6 +302,7 @@ class TrafficIA(InputAdapter):
         if not heading_encoding:  # remove n_yaw_bands and add single channel
             num_input_channels += 1 - 2 * yaw_n_bands
 
+        self.yaw_min_freq = yaw_min_freq
         self.yaw_max_freq = yaw_max_freq
         self.yaw_n_bands = yaw_n_bands
         self.map_max_freq = map_max_freq
@@ -312,14 +317,16 @@ class TrafficIA(InputAdapter):
         if self.input_mode == TrafficIA.InputMode.RAW:
             return x, pad_mask
 
-        num_frequency_bands = [self.map_n_bands] * 2
-        max_frequencies = [self.map_max_freq] * 2
+        num_freq = [self.map_n_bands] * 2
+        min_freq = [1.0] * 2
+        max_freq = [self.map_max_freq] * 2
         if self.heading_encoding:
-            num_frequency_bands.append(self.yaw_n_bands)
-            max_frequencies.append(self.yaw_max_freq)
+            num_freq.append(self.yaw_n_bands)
+            max_freq.append(self.yaw_max_freq)
+            min_freq.append(self.yaw_min_freq)
 
         enc_x = _sample_frequency_band(
-            x, num_frequency_bands, max_frequencies, include_positions=False
+            x, num_freq, max_freq, min_freq, include_positions=False
         )
 
         if self.input_mode == TrafficIA.InputMode.FPOS_EXTRA:
@@ -404,8 +411,8 @@ class SignalIA(InputAdapter):
             else input_mode
         )
 
-        self.max_frequency = max_frequency
-        self.num_frequency_bands = num_frequency_bands
+        self.max_freq = max_frequency
+        self.num_freq = num_frequency_bands
         self.max_enum = max_enum
         num_input_channels += {
             SignalIA.InputMode.RAW: 2,
@@ -422,8 +429,8 @@ class SignalIA(InputAdapter):
             case SignalIA.InputMode.FPOS:
                 enc_x = _sample_frequency_band(
                     x,
-                    num_frequency_bands=[self.num_frequency_bands] * 2,
-                    max_frequencies=[self.max_frequency] * 2,
+                    num_freq=[self.num_freq] * 2,
+                    max_freq=[self.max_freq] * 2,
                     include_positions=False,
                 )
             case SignalIA.InputMode.RAW:
