@@ -12,6 +12,6 @@ dash.register_page(
 if __name__ == "__main__":
     parser = ArgumentParser()
     add_base_args(parser)
-    app.layout = get_basic_layout(str(parser.parse_args().root))
+    app.layout = get_basic_layout(str(parser.parse_args().workspace))
 
     app.run(debug=True)
