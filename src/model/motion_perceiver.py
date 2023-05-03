@@ -401,7 +401,7 @@ class MotionEncoder3Ctx(MotionEncoder3):
             torch.ones((1, num_latent)).cuda(),
         )
         input_layer = Adapted(self.input_adapter, self.input_layer)
-        torch.onnx.export(input_layer, inputs, path / "input_layer.onnx")
+        torch.onnx.export(input_layer, inputs, str(path / "input_layer.onnx"))
 
         print("Exporting update_layer")
         inputs = (
@@ -410,17 +410,19 @@ class MotionEncoder3Ctx(MotionEncoder3):
             torch.ones((1, num_latent)).cuda(),
         )
         update_layer = Adapted(self.input_adapter, self.update_layer)
-        torch.onnx.export(update_layer, inputs, path / "update_layer.onnx")
+        torch.onnx.export(update_layer, inputs, str(path / "update_layer.onnx"))
 
         print("Exporting propagate_layer")
         inputs = torch.randn((1, num_latent, self.latent_dim)).cuda()
-        torch.onnx.export(self.propagate_layer, inputs, path / "propagate_layer.onnx")
+        torch.onnx.export(
+            self.propagate_layer, inputs, str(path / "propagate_layer.onnx")
+        )
 
         if self.roadgraph_encoder is not None:
             print("Exporting road_encoder")
             inputs = torch.randn((1, *self.roadgraph_encoder.image_shape)).cuda()
             torch.onnx.export(
-                self.roadgraph_encoder, inputs, path / "road_encoder.onnx"
+                self.roadgraph_encoder, inputs, str(path / "road_encoder.onnx")
             )
 
             print("Exporting road_update")
@@ -434,7 +436,8 @@ class MotionEncoder3Ctx(MotionEncoder3):
                 ).cuda(),
                 torch.ones(1, num_road_tokens).cuda(),
             )
-            torch.onnx.export(self.road_attn, inputs, path / "road_update.onnx")
+            assert self.road_attn is not None
+            torch.onnx.export(self.road_attn, inputs, str(path / "road_update.onnx"))
 
         if self.signal_encoder is not None:
             print("Exporting signal_update")
@@ -444,7 +447,7 @@ class MotionEncoder3Ctx(MotionEncoder3):
                 torch.ones((1, 16)).cuda(),
             )
             signal_update = Adapted(self.signal_encoder, self.signal_attn)
-            torch.onnx.export(signal_update, inputs, path / "signal_update.onnx")
+            torch.onnx.export(signal_update, inputs, str(path / "signal_update.onnx"))
 
         print(f"Finished {type(self).__name__} Export")
 
@@ -459,12 +462,11 @@ class MotionEncoder3Ctx(MotionEncoder3):
             input_indicies.update(candidates[: self.random_input_indicies])
         return input_indicies
 
-    def encode_road(self, data: Tensor, mask: Tensor | None) -> Tuple[Tensor, Tensor]:
+    def encode_road(
+        self, data: Tensor, mask: Tensor | None
+    ) -> Tuple[Tensor, Tensor | None]:
         assert self.roadgraph_encoder is not None
         enc: Tensor = self.roadgraph_encoder(data)
-
-        if mask is None:
-            mask = torch.ones(enc.shape[:-1], device=enc.device)
 
         if self.road_post is not None:
             enc = self.road_post(enc, mask)
@@ -477,7 +479,7 @@ class MotionEncoder3Ctx(MotionEncoder3):
         input_times: Set[int],
         latent: Tensor,
         agents: Tensor,
-        agents_mask: Tensor | None,
+        agents_mask: Tensor,
         signals: Tensor | None,
         signals_mask: Tensor | None,
         road: Tensor | None,
@@ -520,6 +522,8 @@ class MotionEncoder3Ctx(MotionEncoder3):
 
         if road is not None:
             enc_road, road_mask = self.encode_road(road, road_mask)
+        else:
+            enc_road = None
 
         x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
@@ -578,6 +582,8 @@ class MotionEncoder3CtxDetach(MotionEncoder3Ctx):
 
         if road is not None:
             enc_road, road_mask = self.encode_road(road, road_mask)
+        else:
+            enc_road = None
 
         x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
@@ -1132,11 +1138,11 @@ class MotionPercieverWSignals(MotionPerceiver):
 
         if roadgraph is not None and roadgraph.size():
             assert roadgraph_valid is not None
-            kwargs["roadgraph"] = roadgraph
-            kwargs["roadgraph_mask"] = roadgraph_valid.bool()
+            kwargs["road"] = roadgraph
+            kwargs["road_mask"] = roadgraph_valid.bool()
 
         if roadmap is not None and roadmap.size():
-            kwargs["roadgraph"] = roadmap
+            kwargs["road"] = roadmap
 
         x_latents: List[Tensor] = self.encoder(**kwargs)
 

@@ -1,7 +1,7 @@
 """Perciever IO Model."""
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict
 
 
 import torch
@@ -10,13 +10,10 @@ import einops
 
 from ._iadapter import (
     InputAdapter,
-    ImageIA,
-    TextIA,
-    TrafficIA,
     _generate_position_encodings,
     _generate_positions_for_encoding,
 )
-from ._oadapter import OutputAdapter, ClassificationOA, HeatmapOA
+from ._oadapter import OutputAdapter
 
 
 class Sequential(nn.Sequential):
