@@ -11,7 +11,7 @@ RUN cd build && make install -j$(nproc)
 WORKDIR /root
 RUN rm -r /opt/opencv
 
-# USER worker
+USER worker
 RUN pip3 install \
     opencv-python-headless \
     einops==0.6.0 \
@@ -23,7 +23,7 @@ ARG COMMIT
 RUN [ ! -z "${COMMIT}" ]
 ENV COMMIT_SHA=${COMMIT}
 
-COPY . /home/worker
+COPY --chown=worker:worker . /home/worker
 WORKDIR /home/worker
 RUN cd src/dataset/plugins && sh makeplugins.sh
 

@@ -51,8 +51,8 @@ std::vector<cv::Point2i> poseToPoly(float x, float y, float t, float w, float l)
         std::cos(t), -std::sin(t),
         std::sin(t), std::cos(t)
     };
-    l /= 2;
-    w /= 2;
+    l /= 2.f;
+    w /= 2.f;
     // 2x4 bbox corners at 0,0
     const cv::Matx<float, 2, 4> points = {
         -l, l, l, -l,
@@ -67,7 +67,8 @@ std::vector<cv::Point2i> poseToPoly(float x, float y, float t, float w, float l)
     polyPoints.reserve(4);
     for (auto col = 0; col < rotated_box.cols; ++col)
     {
-        polyPoints.emplace_back(rotated_box(0, col) + x, rotated_box(1, col) + y);
+        constexpr auto roundOffset = 0.5f;
+        polyPoints.emplace_back(rotated_box(0, col) + x + roundOffset, rotated_box(1, col) + y + roundOffset);
     }
     return polyPoints;
 }
