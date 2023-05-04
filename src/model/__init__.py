@@ -25,6 +25,11 @@ class MotionPerceiverConfig(TorchModelConfig):
             sz = [1, sz, sz]
             model_cfg["encoder"]["roadgraph_ia"]["args"]["image_shape"] = sz
 
+        # Number of "extra features" is number of vehicle features minus xyt
+        model_cfg["encoder"]["adapter"]["args"]["n_extra_features"] = (
+            len(props["vehicle_features"]) - 3
+        )
+
         sz = props["occupancy_size"]
         model_cfg["decoder"]["adapter"]["args"]["image_shape"] = [sz, sz]
         model_cfg["decoder"]["position_encoding_limit"] = props["occupancy_roi"]

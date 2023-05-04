@@ -261,24 +261,25 @@ def waymo_motion_pipe(
         temp_x = dmath.cos(rot_angle) * data["x"] - dmath.sin(rot_angle) * data["y"]
         data["y"] = dmath.sin(rot_angle) * data["x"] + dmath.cos(rot_angle) * data["y"]
         data["x"] = temp_x
-
-        # Rotate vx,vy
-        temp_x = (
-            dmath.cos(rot_angle) * data["velocity_x"]
-            - dmath.sin(rot_angle) * data["velocity_y"]
-        )
-        data["velocity_y"] = (
-            dmath.sin(rot_angle) * data["velocity_x"]
-            + dmath.cos(rot_angle) * data["velocity_y"]
-        )
-        data["velocity_x"] = temp_x
-
         data["bbox_yaw"] += rot_angle
 
+        if "velocity_x" in data:
+            # Rotate vx,vy
+            temp_x = (
+                dmath.cos(rot_angle) * data["velocity_x"]
+                - dmath.sin(rot_angle) * data["velocity_y"]
+            )
+            data["velocity_y"] = (
+                dmath.sin(rot_angle) * data["velocity_x"]
+                + dmath.cos(rot_angle) * data["velocity_y"]
+            )
+            data["velocity_x"] = temp_x
+
     if cfg.waymo_eval_frame:  # flip y and move back 20m
-        data["velocity_y"] *= -1
         data["y"] *= -1
         data["y"] += 20
+        if "velocity_y" in data:
+            data["velocity_y"] *= -1
 
     if cfg.map_normalize > 0.0:  # Divide by normalization factor
         for key in ["width", "length", "x", "y"]:

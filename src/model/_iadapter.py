@@ -265,6 +265,7 @@ class TrafficIA(InputAdapter):
         yaw_max_freq: float = 16.0,
         map_n_bands: int = 0,
         yaw_n_bands: int = 0,
+        n_extra_features: int = 5,
         heading_encoding: bool = True,
         num_frequency_bands: int = 32,
         class_onehot: bool = False,
@@ -290,14 +291,17 @@ class TrafficIA(InputAdapter):
         self.class_names = class_names
 
         # raw = input data x,y,t,dx,dt,dt,l,h
-        num_input_channels = {
-            TrafficIA.InputMode.RAW: 8,
-            TrafficIA.InputMode.FPOS: (map_n_bands * 2 + yaw_n_bands) * 2,
-            TrafficIA.InputMode.FPOS_EXTRA: (map_n_bands * 2 + yaw_n_bands) * 2 + 5,
-        }[self.input_mode]
+        match self.input_mode:
+            case TrafficIA.InputMode.RAW:
+                num_input_channels = 8
+            case TrafficIA.InputMode.FPOS | TrafficIA.InputMode.FPOS_EXTRA:
+                num_input_channels = (map_n_bands * 2 + yaw_n_bands) * 2
+
+        if self.input_mode == TrafficIA.InputMode.FPOS_EXTRA:
+            num_input_channels += n_extra_features  # Append extra features
 
         if self.class_mode == TrafficIA.ClassMode.ONEHOT:
-            num_input_channels += 3  # 3 classes
+            num_input_channels += 3  # number of onehot classes
 
         if not heading_encoding:  # remove n_yaw_bands and add single channel
             num_input_channels += 1 - 2 * yaw_n_bands
