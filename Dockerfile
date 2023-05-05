@@ -1,15 +1,18 @@
-FROM WITHHELD/konductor:pytorch-main
-
-# Install opencv 4.5 for DALI, only install imgproc
-USER root
+FROM ubuntu:22.04 AS opencv-build
 WORKDIR /opt/opencv
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.7.0.zip && \
     unzip opencv.zip && \
     cmake -B build -S opencv-4.7.0 -DBUILD_LIST=imgproc
-RUN cd build && make install -j$(nproc)
-WORKDIR /root
-RUN rm -r /opt/opencv
+RUN cd build && make -j$(nproc)
+
+FROM WITHHELD/konductor:pytorch-main
+
+# Install opencv 4.5 for DALI, only install imgproc
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++
+COPY --from=opencv-build /opt/opencv /opt/opencv
+RUN cd /opt/opencv/build && make install && cd /root && rm -r /opt/opencv
 
 USER worker
 RUN pip3 install \
