@@ -382,6 +382,9 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
     exp_cfg = cli_init_config(args)
     exp_cfg.model[0].optimizer.args.pop("step_interval", None)
 
+    if exp_cfg.data[0].dataset.args.get("map_normalize", 0) == 80:
+        exp_cfg.data[0].dataset.args["occupancy_roi"] = 0.5
+
     if args.dataset_override:
         print(f"Overriding {exp_cfg.data[0].dataset.type} to {args.dataset_override}")
         exp_cfg.data[0].dataset.type = args.dataset_override
