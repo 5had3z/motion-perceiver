@@ -232,75 +232,100 @@ def waymo_motion_pipe(
     data_valid = fn.cat(
         *[inputs[f"state/{time_}/valid"] for time_ in _time_keys], axis=1
     )
-    data = fn.stack(
-        *[
-            fn.cat(*[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1)
-            if key != "class"  # handle class separately
-            else fn.stack(
-                *[inputs["state/type"] for _ in range(91 if cfg.full_sequence else 1)],
-                axis=1,
-            )
-            for key in _ALL_FEATURES
-        ],
-        axis=2,
-    )
+
+    def stack_keys(*keys):
+        """Stacks raw data to [inst, time, keys]"""
+        return fn.stack(
+            *[
+                fn.cat(
+                    *[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1
+                )
+                if key != "class"  # handle class separately
+                else fn.stack(
+                    *[
+                        inputs["state/type"]
+                        for _ in range(91 if cfg.full_sequence else 1)
+                    ],
+                    axis=1,
+                )
+                for key in keys
+            ],
+            axis=2,
+        )
+
+    data_xy = stack_keys("x", "y")
 
     if cfg.use_sdc_frame:  # Center based on SDC
         sdc_mask = inputs["state/is_sdc"] * inputs["state/current/valid"][:, 0]
         sdc_mask = fn.cast(sdc_mask, dtype=DALIDataType.INT32)
         center = fn.transforms.translation(
-            offset=fn.stack(
+            offset=fn.cat(
                 fn.masked_median(inputs["state/current/x"], sdc_mask),
                 fn.masked_median(inputs["state/current/y"], sdc_mask),
             )
         )
-        rot_angle = Constant(math.pi / 2, dtype=DALIDataType.FLOAT) - fn.masked_median(
+        angle_rad = Constant(math.pi / 2, dtype=DALIDataType.FLOAT) - fn.masked_median(
             inputs["state/current/bbox_yaw"], sdc_mask
+        )
+        angle_deg = (
+            Constant(180, dtype=DALIDataType.FLOAT)
+            * angle_rad
+            / Constant(np.pi, dtype=DALIDataType.FLOAT)
         )
     else:  #  Center system based on median agent position
         center = fn.transforms.translation(
-            offset=fn.stack(
-                fn.masked_median(data[_FEAT_IDX["x"]], data["valid"]),
-                fn.masked_median(data[_FEAT_IDX["y"]], data["valid"]),
+            offset=fn.cat(
+                fn.masked_median(data_xy[0], data_valid),
+                fn.masked_median(data_xy[1], data_valid),
             )
         )
-        rot_angle = Constant(0.0, dtype=DALIDataType.FLOAT)
+        angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
+        angle_deg = angle_rad
 
-    rot_mat = fn.transforms.rotation(angle=rot_angle)
+    rot_mat = fn.transforms.rotation(angle=fn.reshape(angle_deg, shape=[]))
 
     if cfg.waymo_eval_frame:
         # Flip y and move down 20m
-        final_tf = np.array([[1, 0, 0], [0, -1, 20]])
+        final_tf = np.array([[1, 0, 0], [0, -1, 20]], dtype=np.float32)
     else:
-        final_tf = np.array([[1, 0, 0], [0, 1, 0]])
+        final_tf = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float32)
 
     xy_tf = fn.transforms.combine(center, rot_mat, final_tf)
 
-    # Center the frame
-    data[:2] = fn.coord_transform(data[:2], MT=xy_tf)
+    # Transform XY
+    data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=rot_mat)
+    data_xy = fn.reshape(data_xy, shape=[128, -1, 2])
 
-    # Rotate VX,VY
-    data[3:5] = fn.coord_transform(data[3:5], MT=rot_mat)
-    if cfg.waymo_eval_frame:  # Flip VY
-        data[_FEAT_IDX["velocity_y"]] *= -1
+    # Transform V{X|Y}
+    data_vxvy = stack_keys("velocity_x", "velocity_y")
+    vxvy_tf = (
+        fn.transforms.combine(rot_mat, np.array([[1, 0, 0], [0, -1, 0]], np.float32))
+        if cfg.waymo_eval_frame  # Flip VY if True
+        else rot_mat
+    )
+    data_vxvy = fn.coord_transform(fn.reshape(data_vxvy, shape=[-1, 2]), MT=vxvy_tf)
+    data_vxvy = fn.reshape(data_vxvy, shape=[128, -1, 2])
+
+    data_wl = stack_keys("width", "length")
 
     if cfg.map_normalize > 0.0:  # Divide by normalization factor
-        for key in ["width", "length", "x", "y"]:
-            data[_FEAT_IDX[key]] /= cfg.map_normalize
+        data_xy /= cfg.map_normalize
+        data_wl /= cfg.map_normalize
 
         # x and y are within the ROI
-        data[_FEAT_IDX["valid"]] *= (dmath.abs(data[_FEAT_IDX["x"]]) < 1) * (
-            dmath.abs(data[_FEAT_IDX["y"]]) < 1
-        )
+        # data_valid *= fn.reshape(
+        #     (dmath.abs(data_xy[:, :, 0]) < 1) * (dmath.abs(data_xy[:, :, 1]) < 1),
+        #     shape=[128, -1],
+        # )
 
     # normalize angle bewteen [-1,1]
-    yaw_idx = _FEAT_IDX["bbox_yaw"]
-    data[yaw_idx] = dmath.atan2(
-        dmath.sin(data[yaw_idx]), dmath.cos(data[yaw_idx])
-    ) / Constant(math.pi, dtype=DALIDataType.FLOAT)
-
+    data_yaw = stack_keys("bbox_yaw")
+    data_yaw += angle_rad
+    data_yaw = dmath.atan2(dmath.sin(data_yaw), dmath.cos(data_yaw)) / Constant(
+        math.pi, dtype=DALIDataType.FLOAT
+    )
     if cfg.waymo_eval_frame:  # flip sign
-        data[yaw_idx] *= -1
+        data_yaw *= -1
 
     # Maybe an idea for later, will stick with xy for now
     # if all(key in vehicle_features for key in ["velocity_x", "velocity_y"]):
@@ -310,16 +335,25 @@ def waymo_motion_pipe(
     #         dmath.pow(data["velocity_x"], 2) + dmath.pow(data["velocity_y"], 2)
     #     )
 
-    if cfg.separate_classes:
-        cfg.vehicle_features.append("class")
-
+    data_class = stack_keys("class")
     if cfg.only_vehicles:  # Mark all other classes as invalid
-        data_valid = data_valid * (data[_FEAT_IDX["class"]] == 1)
+        data_valid *= fn.reshape(data_class == 1, shape=[128, -1])
 
-    outputs = [
-        fn.stack(*[data[_FEAT_IDX[k]] for k in cfg.vehicle_features], axis=2),
-        data_valid,
-    ]
+    data_vt = stack_keys("vel_yaw")
+
+    data_out = [data_xy]
+    if "bbox_yaw" in cfg.vehicle_features:
+        data_out.append(data_yaw)
+    if any("velocity" in k for k in cfg.vehicle_features):
+        data_out.append(data_vxvy)
+    if "vel_yaw" in cfg.vehicle_features:
+        data_out.append(data_vt)
+    if all(k in cfg.vehicle_features for k in ["width", "length"]):
+        data_out.append(data_wl)
+    if cfg.separate_classes:
+        data_out.append(data_class)
+
+    outputs = [fn.cat(*data_out, axis=2), data_valid]
 
     # roadmap into image
     if cfg.roadmap:
@@ -333,7 +367,6 @@ def waymo_motion_pipe(
                 size=cfg.roadmap_size,
                 normalize_value=cfg.map_normalize,
                 lane_center=True,
-                waymo_eval_frame=cfg.waymo_eval_frame,
             )
         )
 
@@ -346,43 +379,56 @@ def waymo_motion_pipe(
             ),
             dtype=DALIDataType.INT32,
         )
-        signal_state = fn.cast(
-            fn.cat(
-                *[inputs[f"traffic_light_state/{time_}/state"] for time_ in _time_keys],
-                axis=0,
+        signal_state = fn.reshape(
+            fn.cast(
+                fn.cat(
+                    *[
+                        inputs[f"traffic_light_state/{time_}/state"]
+                        for time_ in _time_keys
+                    ],
+                    axis=0,
+                ),
+                dtype=DALIDataType.FLOAT,
             ),
-            dtype=DALIDataType.FLOAT,
+            shape=[16, -1, 1],
         )
 
         # Read signal positions over time
         signal_xy = fn.stack(
-            fn.cat(
-                *[inputs[f"traffic_light_state/{time_}/x"] for time_ in _time_keys],
-                axis=0,
-            ),
-            fn.cat(
-                *[inputs[f"traffic_light_state/{time_}/y"] for time_ in _time_keys],
-                axis=0,
-            ),
-            axis=1,
+            *[
+                fn.cat(
+                    *[
+                        inputs[f"traffic_light_state/{time_}/{k}"]
+                        for time_ in _time_keys
+                    ],
+                    axis=0,
+                )
+                for k in ["x", "y"]
+            ],
+            axis=2,
         )
 
-        signal_xy = fn.coord_transform(data[:2], MT=xy_tf)
+        signal_xy = fn.coord_transform(fn.reshape(signal_xy, shape=[-1, 2]), MT=xy_tf)
+        signal_xy = fn.reshape(signal_xy, shape=[16, -1, 2])
 
         if cfg.map_normalize > 0.0:  # Normalize Signal Positions
             signal_xy /= cfg.map_normalize
 
             # Signals must be in map roi
-            signal_valid = (
-                signal_valid
-                * (dmath.abs(signal_xy[0]) < 1)
-                * (dmath.abs(signal_xy[1]) < 1)
+            signal_valid *= fn.reshape(
+                (dmath.abs(signal_xy[:, :, 0]) < 1)
+                * (dmath.abs(signal_xy[:, :, 1]) < 1),
+                shape=[-1, 16],
             )
 
-        outputs.extend([fn.cat(signal_xy, signal_state, axis=1), signal_valid])
+        outputs.extend([fn.cat(signal_xy, signal_state, axis=2), signal_valid])
 
     # Add occupancy heatmap
     if cfg.occupancy_size > 0:
+        data_all = fn.cat(
+            data_xy, data_yaw, data_vxvy, data_vt, data_wl, data_class, axis=2
+        )
+
         occ_kwargs = dict(
             size=cfg.occupancy_size,
             roi=cfg.occupancy_roi,
@@ -399,10 +445,10 @@ def waymo_motion_pipe(
             occ_kwargs["min_random_idx"] = cfg.random_heatmap_minmax[0]
             occ_kwargs["max_random_idx"] = cfg.random_heatmap_minmax[1]
 
-        outputs.extend(fn.occupancy_mask(data, data_valid, **occ_kwargs))
+        outputs.extend(fn.occupancy_mask(data_all, data_valid, **occ_kwargs))
 
         if cfg.flow_mask:
-            outputs.extend(fn.flow_mask(data, data_valid, **occ_kwargs))
+            outputs.extend(fn.flow_mask(data_all, data_valid, **occ_kwargs))
 
     if cfg.scenario_id:
         # Add padding since scenario_id contains <=16 characters

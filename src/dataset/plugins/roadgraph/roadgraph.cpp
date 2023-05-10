@@ -111,8 +111,8 @@ inline bool isValidRL(int64_t valid, int64_t type)
 }
 
 void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor, ConstDaliTensor idTensor,
-    ConstDaliTensor validTensor, float center_x, float center_y, float rotation, float normalisaiton,
-    int32_t markingFlags, bool waymoEvalFrame, DaliTensor imageTensor)
+    ConstDaliTensor validTensor, ConstDaliTensor tfTensor, float normalisaiton, int32_t markingFlags,
+    DaliTensor imageTensor)
 {
     const auto outputDims = imageTensor.shape();
     cv::Mat heatmapImage(outputDims[1], outputDims[2], CV_32F, imageTensor.raw_mutable_data());
@@ -125,24 +125,20 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
     const int64_t* idPtr = idTensor.data<int64_t>();
     const int64_t* validPtr = validTensor.data<int64_t>();
 
-    auto transform_point = [&](float x, float y)
+    const cv::Matx23f transform(tfTensor.data<float>());
+
+    auto transform_point = [&](cv::Matx31f point)
     {
-        // Translate the point into the origin frame
-        x -= center_x;
-        y -= center_y;
+        // Perform coordinate transform
+        cv::Matx21f pointTf = transform * point;
 
-        // Rotate the point around origin
-        const float rot_x = std::cos(rotation) * x - std::sin(rotation) * y;
-        const float rot_y = std::sin(rotation) * x + std::cos(rotation) * y;
+        // Perfrom Normalization to [-1,1]
+        pointTf = pointTf / normalisaiton + cv::Matx21f(1.f);
 
-        // normalize to image
-        const int norm_x = (rot_x / normalisaiton + 1.f) * outputDims[2] / 2.f;
+        // Scale to image coordinates and add 0.5 for floor rounding
+        pointTf = pointTf.mul(cv::Matx21f(outputDims[2] / 2.f + 0.5, outputDims[1] / 2.f + 0.5));
 
-        // transform to waymo frame if required which has a 20m offset and flipped direction
-        const int norm_y = waymoEvalFrame ? ((20.f - rot_y) / normalisaiton + 1.f) * outputDims[1] / 2.f
-                                          : (rot_y / normalisaiton + 1.f) * outputDims[1] / 2.f;
-
-        return cv::Point2i{norm_x, norm_y};
+        return cv::Point2i{static_cast<int>(pointTf.val[0]), static_cast<int>(pointTf.val[1])};
     };
 
     for (int64_t idx = 1; idx < maxIdx; ++idx)
@@ -161,8 +157,8 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
         const float* fromXYZ = positionPtr + 3 * (idx - 1);
         const float* toXYZ = positionPtr + 3 * idx;
 
-        const cv::Point2i start = transform_point(fromXYZ[0], fromXYZ[1]);
-        const cv::Point2i end = transform_point(toXYZ[0], toXYZ[1]);
+        const auto start = transform_point({fromXYZ[0], fromXYZ[1], 1});
+        const auto end = transform_point({toXYZ[0], toXYZ[1], 1});
 
         cv::line(heatmapImage, start, end, cv::Scalar(1), 1);
     }
@@ -175,9 +171,7 @@ void RoadGraphImage<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
     const auto& typeTensor = ws.Input<::dali::CPUBackend>(1);
     const auto& idTensor = ws.Input<::dali::CPUBackend>(2);
     const auto& validTensor = ws.Input<::dali::CPUBackend>(3);
-    const auto& centerXTensor = ws.Input<::dali::CPUBackend>(4);
-    const auto& centerYTensor = ws.Input<::dali::CPUBackend>(5);
-    const auto& centerRTensor = ws.Input<::dali::CPUBackend>(6);
+    const auto& tfTensor = ws.Input<::dali::CPUBackend>(4);
 
     auto& outImageTensor = ws.Output<::dali::CPUBackend>(0);
 
@@ -187,14 +181,11 @@ void RoadGraphImage<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
     for (int sampleId = 0; sampleId < inShape.num_samples(); ++sampleId)
     {
         tPool.AddWork(
-            [&, sampleId](int thread_id)
+            [&, sampleId](int)
             {
-                const float center_x = centerXTensor[sampleId].data<float>()[0];
-                const float center_y = centerYTensor[sampleId].data<float>()[0];
-                const float rotation = centerRTensor[sampleId].data<float>()[0];
                 createRoadGraphImage(xyzTensor[sampleId], typeTensor[sampleId], idTensor[sampleId],
-                    validTensor[sampleId], center_x, center_y, rotation, mNormalizeFactor, mMarkingFlags,
-                    mWaymoEvalFrame, outImageTensor[sampleId]);
+                    validTensor[sampleId], tfTensor[sampleId], mNormalizeFactor, mMarkingFlags,
+                    outImageTensor[sampleId]);
             });
     }
     tPool.RunAll();
@@ -206,10 +197,9 @@ DALI_REGISTER_OPERATOR(RoadgraphImage, ::roadgraphop::RoadGraphImage<::dali::CPU
 
 DALI_SCHEMA(RoadgraphImage)
     .DocStr("Generates tensor that represents road features from waymo format")
-    .NumInput(7)
+    .NumInput(5)
     .NumOutput(1)
     .AddOptionalArg("lane_center", "add lane centers to image", false)
     .AddOptionalArg("lane_markings", "add lane markings to image", false)
-    .AddOptionalArg("waymo_eval_frame", "add offsets to frame for waymo eval", false)
     .AddArg("size", "size of the output image", ::dali::DALIDataType::DALI_INT64)
     .AddArg("normalize_value", "Normalisation factor for x,y coords", ::dali::DALIDataType::DALI_FLOAT);
