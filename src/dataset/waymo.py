@@ -229,8 +229,9 @@ def waymo_motion_pipe(
 
     # data contains all feature information required
     _time_keys = _TIME_KEYS if cfg.full_sequence else ["current"]
-    data_valid = fn.cat(
-        *[inputs[f"state/{time_}/valid"] for time_ in _time_keys], axis=1
+    data_valid = fn.cast(
+        fn.cat(*[inputs[f"state/{time_}/valid"] for time_ in _time_keys], axis=1),
+        dtype=DALIDataType.INT32,
     )
 
     def stack_keys(*keys):
@@ -275,8 +276,8 @@ def waymo_motion_pipe(
     else:  #  Center system based on median agent position
         center = fn.transforms.translation(
             offset=-fn.cat(
-                fn.masked_median(data_xy[0], data_valid),
-                fn.masked_median(data_xy[1], data_valid),
+                fn.masked_median(data_xy[:, :, 0], data_valid),
+                fn.masked_median(data_xy[:, :, 1], data_valid),
             )
         )
         angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)

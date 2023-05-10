@@ -114,7 +114,7 @@ void Median<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
 
     for (int sampleId = 0; sampleId < inShape.num_samples(); sampleId++)
     {
-        tPool.AddWork([&, sampleId](int thread_id) { median(input[sampleId], mask[sampleId], output[sampleId]); });
+        tPool.AddWork([&, sampleId](int) { median(input[sampleId], mask[sampleId], output[sampleId]); });
     }
     tPool.RunAll();
 }

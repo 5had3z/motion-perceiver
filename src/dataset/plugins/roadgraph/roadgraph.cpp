@@ -132,13 +132,14 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
         // Perform coordinate transform
         cv::Matx21f pointTf = transform * point;
 
-        // Perfrom Normalization to [-1,1]
-        pointTf = pointTf / normalisaiton + cv::Matx21f(1.f);
+        // Perfrom Normalization to [0, 2]
+        pointTf = pointTf / normalisaiton + cv::Matx21f(1.f, 1.f);
 
-        // Scale to image coordinates and add 0.5 for floor rounding
-        pointTf = pointTf.mul(cv::Matx21f(outputDims[2] / 2.f + 0.5, outputDims[1] / 2.f + 0.5));
+        // Scale to image coordinates
+        pointTf = pointTf.mul(cv::Matx21f(outputDims[2] / 2.f, outputDims[1] / 2.f));
 
-        return cv::Point2i{static_cast<int>(pointTf.val[0]), static_cast<int>(pointTf.val[1])};
+        // Add 0.5 to counteract floor rounding for float->int in pixel space
+        return cv::Point2i{static_cast<int>(pointTf.val[0] + 0.5), static_cast<int>(pointTf.val[1] + 0.5)};
     };
 
     for (int64_t idx = 1; idx < maxIdx; ++idx)
