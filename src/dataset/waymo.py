@@ -259,7 +259,7 @@ def waymo_motion_pipe(
         sdc_mask = inputs["state/is_sdc"] * inputs["state/current/valid"][:, 0]
         sdc_mask = fn.cast(sdc_mask, dtype=DALIDataType.INT32)
         center = fn.transforms.translation(
-            offset=fn.cat(
+            offset=-fn.cat(
                 fn.masked_median(inputs["state/current/x"], sdc_mask),
                 fn.masked_median(inputs["state/current/y"], sdc_mask),
             )
@@ -274,7 +274,7 @@ def waymo_motion_pipe(
         )
     else:  #  Center system based on median agent position
         center = fn.transforms.translation(
-            offset=fn.cat(
+            offset=-fn.cat(
                 fn.masked_median(data_xy[0], data_valid),
                 fn.masked_median(data_xy[1], data_valid),
             )
@@ -293,7 +293,7 @@ def waymo_motion_pipe(
     xy_tf = fn.transforms.combine(center, rot_mat, final_tf)
 
     # Transform XY
-    data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=rot_mat)
+    data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=xy_tf)
     data_xy = fn.reshape(data_xy, shape=[128, -1, 2])
 
     # Transform V{X|Y}
@@ -313,10 +313,10 @@ def waymo_motion_pipe(
         data_wl /= cfg.map_normalize
 
         # x and y are within the ROI
-        # data_valid *= fn.reshape(
-        #     (dmath.abs(data_xy[:, :, 0]) < 1) * (dmath.abs(data_xy[:, :, 1]) < 1),
-        #     shape=[128, -1],
-        # )
+        data_valid *= fn.reshape(
+            (dmath.abs(data_xy[:, :, 0]) < 1) * (dmath.abs(data_xy[:, :, 1]) < 1),
+            shape=[128, -1],
+        )
 
     # normalize angle bewteen [-1,1]
     data_yaw = stack_keys("bbox_yaw")
