@@ -161,7 +161,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
         // If valid sample
         if (maskTensor.data<int>()[cIdx])
         {
-            const auto data = dataTensor.data<state_t>()[cIdx];
+            const auto data = static_cast<const state_t*>(dataTensor.raw_data())[cIdx];
 
             const int classIdx = static_cast<int>(data.cls) - 1;
             if (classIdx < 0 || classIdx > 2)
@@ -179,7 +179,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
             const float length = data.l / roiScale * yScale;
 
             // Find polyPoints
-            auto polyPoints = poseToPoly(x, y, data.yaw, width, length);
+            auto polyPoints = poseToPoly(x, y, data.yaw * M_PI, width, length);
 
             // Apply to image
             cv::fillConvexPoly(heatmapImages[separateClasses ? classIdx : 0], polyPoints, cv::Scalar(1));

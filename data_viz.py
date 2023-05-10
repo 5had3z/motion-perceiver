@@ -29,7 +29,7 @@ def main():
         occupancy_roi=0.5,
         only_vehicles=True,
     )
-    dataloader = get_dataloader(waymo, Mode.train)
+    dataloader = get_dataloader(waymo, Mode.val)
 
     for data in dataloader:
         data: Dict[str, Tensor] = data[0]  # remove list dim

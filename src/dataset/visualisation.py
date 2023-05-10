@@ -45,6 +45,7 @@ def sequence(data: Dict[str, Tensor]) -> None:
 
         plt.tight_layout()
         plt.savefig(f"agents_{i}.png")
+        plt.close(f"agents_{i}")
 
 
 def pose_to_poly(pose_data: np.ndarray) -> np.ndarray:
