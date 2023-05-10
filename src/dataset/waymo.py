@@ -5,6 +5,7 @@ from pathlib import Path
 import math
 from typing import Any, Dict, List, Tuple
 
+import numpy as np
 from nvidia.dali import pipeline_def, Pipeline
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
@@ -38,17 +39,26 @@ def _cache_record_idx(dataset_path: Path) -> Path:
     return dali_idx_path
 
 
+# fmt: off
+_ALL_FEATURES = [
+    "x", "y", "bbox_yaw",
+    "velocity_x", "velocity_y", "vel_yaw",
+    "width", "length", "class"
+]
+# fmt: on
+
+_FEAT_IDX = {f: i for i, f in enumerate(_ALL_FEATURES)}
+
+_TIME_KEYS = ["past", "current", "future"]
+
+
 @dataclass
 @DATASET_REGISTRY.register_module("waymo_motion")
 class WaymoDatasetConfig(DatasetConfig):
     occupancy_size: int = field(kw_only=True)
     full_sequence: bool = False
-    # fmt: off
     # Vehicle_features is order sensitive (this is ordering of channel concatenation)
-    vehicle_features: List[str] = field(
-        default_factory=lambda: [
-            "x", "y", "bbox_yaw", "velocity_x", "velocity_y", "vel_yaw", "width", "length"])
-    # fmt: on
+    vehicle_features: List[str] = field(default_factory=lambda: _ALL_FEATURES)
     roadmap: bool = False
     signal_features: bool = False
     map_normalize: float = 0.0
@@ -64,6 +74,7 @@ class WaymoDatasetConfig(DatasetConfig):
     only_vehicles: bool = False
     # How to scale the occupancy roi, whole image => 1, center crop => 0.5
     occupancy_roi: float = 1.0
+    flow_mask: bool = False
 
     @property
     def properties(self) -> Dict[str, Any]:
@@ -216,85 +227,80 @@ def waymo_motion_pipe(
         name=record_root.stem,
     )
 
-    _time_keys = ["past", "current", "future"]
-
-    if cfg.full_sequence:
-        data = {
-            "valid": fn.cat(
-                *[
-                    fn.cast(inputs[f"state/{time_}/valid"], dtype=DALIDataType.INT32)
-                    for time_ in _time_keys
-                ],
+    # data contains all feature information required
+    _time_keys = _TIME_KEYS if cfg.full_sequence else ["current"]
+    data_valid = fn.cat(
+        *[inputs[f"state/{time_}/valid"] for time_ in _time_keys], axis=1
+    )
+    data = fn.stack(
+        *[
+            fn.cat(*[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1)
+            if key != "class"  # handle class separately
+            else fn.stack(
+                *[inputs["state/type"] for _ in range(91 if cfg.full_sequence else 1)],
                 axis=1,
             )
-        }
-        for key in cfg.vehicle_features:
-            data[key] = fn.cat(
-                *[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1
-            )
-    else:
-        data = {
-            "valid": fn.cast(inputs["state/current/valid"], dtype=DALIDataType.INT32)
-        }
-        for key in cfg.vehicle_features:
-            data[key] = inputs[f"state/current/{key}"]
+            for key in _ALL_FEATURES
+        ],
+        axis=2,
+    )
 
     if cfg.use_sdc_frame:  # Center based on SDC
         sdc_mask = inputs["state/is_sdc"] * inputs["state/current/valid"][:, 0]
         sdc_mask = fn.cast(sdc_mask, dtype=DALIDataType.INT32)
-        center_x = fn.masked_median(inputs["state/current/x"], sdc_mask)
-        center_y = fn.masked_median(inputs["state/current/y"], sdc_mask)
+        center = fn.transforms.translation(
+            offset=fn.stack(
+                fn.masked_median(inputs["state/current/x"], sdc_mask),
+                fn.masked_median(inputs["state/current/y"], sdc_mask),
+            )
+        )
         rot_angle = Constant(math.pi / 2, dtype=DALIDataType.FLOAT) - fn.masked_median(
             inputs["state/current/bbox_yaw"], sdc_mask
         )
     else:  #  Center system based on median agent position
-        center_x = fn.masked_median(data["x"], data["valid"])
-        center_y = fn.masked_median(data["y"], data["valid"])
+        center = fn.transforms.translation(
+            offset=fn.stack(
+                fn.masked_median(data[_FEAT_IDX["x"]], data["valid"]),
+                fn.masked_median(data[_FEAT_IDX["y"]], data["valid"]),
+            )
+        )
         rot_angle = Constant(0.0, dtype=DALIDataType.FLOAT)
 
+    rot_mat = fn.transforms.rotation(angle=rot_angle)
+
+    if cfg.waymo_eval_frame:
+        # Flip y and move down 20m
+        final_tf = np.array([[1, 0, 0], [0, -1, 20]])
+    else:
+        final_tf = np.array([[1, 0, 0], [0, 1, 0]])
+
+    xy_tf = fn.transforms.combine(center, rot_mat, final_tf)
+
     # Center the frame
-    data["x"] -= center_x
-    data["y"] -= center_y
+    data[:2] = fn.coord_transform(data[:2], MT=xy_tf)
 
-    if cfg.use_sdc_frame:
-        # Rotate x,y coords
-        temp_x = dmath.cos(rot_angle) * data["x"] - dmath.sin(rot_angle) * data["y"]
-        data["y"] = dmath.sin(rot_angle) * data["x"] + dmath.cos(rot_angle) * data["y"]
-        data["x"] = temp_x
-        data["bbox_yaw"] += rot_angle
-
-        if "velocity_x" in data:
-            # Rotate vx,vy
-            temp_x = (
-                dmath.cos(rot_angle) * data["velocity_x"]
-                - dmath.sin(rot_angle) * data["velocity_y"]
-            )
-            data["velocity_y"] = (
-                dmath.sin(rot_angle) * data["velocity_x"]
-                + dmath.cos(rot_angle) * data["velocity_y"]
-            )
-            data["velocity_x"] = temp_x
-
-    if cfg.waymo_eval_frame:  # flip y and move back 20m
-        data["y"] *= -1
-        data["y"] += 20
-        if "velocity_y" in data:
-            data["velocity_y"] *= -1
+    # Rotate VX,VY
+    data[3:5] = fn.coord_transform(data[3:5], MT=rot_mat)
+    if cfg.waymo_eval_frame:  # Flip VY
+        data[_FEAT_IDX["velocity_y"]] *= -1
 
     if cfg.map_normalize > 0.0:  # Divide by normalization factor
         for key in ["width", "length", "x", "y"]:
-            data[key] /= cfg.map_normalize
+            data[_FEAT_IDX[key]] /= cfg.map_normalize
 
         # x and y are within the ROI
-        data["valid"] *= (dmath.abs(data["x"]) < 1) * (dmath.abs(data["y"]) < 1)
+        data[_FEAT_IDX["valid"]] *= (dmath.abs(data[_FEAT_IDX["x"]]) < 1) * (
+            dmath.abs(data[_FEAT_IDX["y"]]) < 1
+        )
 
-    if "bbox_yaw" in data:  # normalize angle bewteen [-1,1]
-        data["bbox_yaw"] = dmath.atan2(
-            dmath.sin(data["bbox_yaw"]), dmath.cos(data["bbox_yaw"])
-        ) / Constant(math.pi, dtype=DALIDataType.FLOAT)
+    # normalize angle bewteen [-1,1]
+    yaw_idx = _FEAT_IDX["bbox_yaw"]
+    data[yaw_idx] = dmath.atan2(
+        dmath.sin(data[yaw_idx]), dmath.cos(data[yaw_idx])
+    ) / Constant(math.pi, dtype=DALIDataType.FLOAT)
 
-        if cfg.waymo_eval_frame:  # flip sign
-            data["bbox_yaw"] *= -1
+    if cfg.waymo_eval_frame:  # flip sign
+        data[yaw_idx] *= -1
 
     # Maybe an idea for later, will stick with xy for now
     # if all(key in vehicle_features for key in ["velocity_x", "velocity_y"]):
@@ -304,19 +310,15 @@ def waymo_motion_pipe(
     #         dmath.pow(data["velocity_x"], 2) + dmath.pow(data["velocity_y"], 2)
     #     )
 
-    # Add type id to features at the end
-    data["class"] = fn.stack(
-        *[inputs["state/type"] for _ in range(91 if cfg.full_sequence else 1)], axis=1
-    )
     if cfg.separate_classes:
         cfg.vehicle_features.append("class")
 
     if cfg.only_vehicles:  # Mark all other classes as invalid
-        data["valid"] = data["valid"] * (data["class"] == 1)
+        data_valid = data_valid * (data[_FEAT_IDX["class"]] == 1)
 
     outputs = [
-        fn.stack(*[data[k] for k in cfg.vehicle_features], axis=2),
-        data["valid"],
+        fn.stack(*[data[_FEAT_IDX[k]] for k in cfg.vehicle_features], axis=2),
+        data_valid,
     ]
 
     # roadmap into image
@@ -327,9 +329,7 @@ def waymo_motion_pipe(
                 inputs[f"roadgraph_samples/type"],
                 inputs[f"roadgraph_samples/id"],
                 inputs[f"roadgraph_samples/valid"],
-                center_x,
-                center_y,
-                rot_angle,
+                xy_tf,
                 size=cfg.roadmap_size,
                 normalize_value=cfg.map_normalize,
                 lane_center=True,
@@ -355,38 +355,31 @@ def waymo_motion_pipe(
         )
 
         # Read signal positions over time
-        signal_x = fn.cat(
-            *[inputs[f"traffic_light_state/{time_}/x"] for time_ in _time_keys], axis=0
+        signal_xy = fn.stack(
+            fn.cat(
+                *[inputs[f"traffic_light_state/{time_}/x"] for time_ in _time_keys],
+                axis=0,
+            ),
+            fn.cat(
+                *[inputs[f"traffic_light_state/{time_}/y"] for time_ in _time_keys],
+                axis=0,
+            ),
+            axis=1,
         )
-        signal_y = fn.cat(
-            *[inputs[f"traffic_light_state/{time_}/y"] for time_ in _time_keys], axis=0
-        )
 
-        # Center Signal Positions
-        signal_x -= center_x
-        signal_y -= center_y
-
-        if cfg.use_sdc_frame:
-            temp_x = dmath.cos(rot_angle) * signal_x - dmath.sin(rot_angle) * signal_y
-            signal_y = dmath.sin(rot_angle) * signal_x + dmath.cos(rot_angle) * signal_y
-            signal_x = temp_x
-
-        if cfg.waymo_eval_frame:  # flip y and move back 20m
-            signal_y *= -1
-            signal_y += 20
+        signal_xy = fn.coord_transform(data[:2], MT=xy_tf)
 
         if cfg.map_normalize > 0.0:  # Normalize Signal Positions
-            signal_x /= cfg.map_normalize
-            signal_y /= cfg.map_normalize
+            signal_xy /= cfg.map_normalize
 
             # Signals must be in map roi
             signal_valid = (
-                signal_valid * (dmath.abs(signal_x) < 1) * (dmath.abs(signal_y) < 1)
+                signal_valid
+                * (dmath.abs(signal_xy[0]) < 1)
+                * (dmath.abs(signal_xy[1]) < 1)
             )
 
-        outputs.extend(
-            [fn.stack(signal_x, signal_y, signal_state, axis=2), signal_valid]
-        )
+        outputs.extend([fn.cat(signal_xy, signal_state, axis=1), signal_valid])
 
     # Add occupancy heatmap
     if cfg.occupancy_size > 0:
@@ -406,18 +399,10 @@ def waymo_motion_pipe(
             occ_kwargs["min_random_idx"] = cfg.random_heatmap_minmax[0]
             occ_kwargs["max_random_idx"] = cfg.random_heatmap_minmax[1]
 
-        outputs.extend(
-            fn.occupancy_mask(
-                data["x"],
-                data["y"],
-                data["bbox_yaw"] * Constant(math.pi, dtype=DALIDataType.FLOAT),
-                data["width"],
-                data["length"],
-                data["valid"],
-                data["class"],
-                **occ_kwargs,
-            )
-        )
+        outputs.extend(fn.occupancy_mask(data, data_valid, **occ_kwargs))
+
+        if cfg.flow_mask:
+            outputs.extend(fn.flow_mask(data, data_valid, **occ_kwargs))
 
     if cfg.scenario_id:
         # Add padding since scenario_id contains <=16 characters

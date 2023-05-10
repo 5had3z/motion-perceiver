@@ -116,17 +116,12 @@ std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor) noexcept
 /**
  * @brief Create a Heatmap Image at a time interval
  *
- * @param xTensor
- * @param yTensor
- * @param tTensor
- * @param wTensor
- * @param lTensor
+ * @param dataTensor
  * @param maskTensor
  * @param outputTensor Class, Timestep, Height, Width
  * @param timeIdx
  */
-void createHeatmapImage(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstDaliTensor tTensor,
-    ConstDaliTensor wTensor, ConstDaliTensor lTensor, ConstDaliTensor maskTensor, ConstDaliTensor classTensor,
+void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, ConstDaliTensor classTensor,
     std::size_t inTimeIdx, DaliTensor outputTensor, std::size_t outTimeIdx, double roiScale,
     bool separateClasses) noexcept
 {
@@ -181,10 +176,8 @@ void createHeatmapImage(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstD
  * @brief Run over multiple time indexes
  *
  */
-void createHeatMapImageMulti(ConstDaliTensor xTensor, ConstDaliTensor yTensor, ConstDaliTensor tTensor,
-    ConstDaliTensor wTensor, ConstDaliTensor lTensor, ConstDaliTensor maskTensor, ConstDaliTensor classTensor,
-    std::vector<int64_t> timeIdxs, DaliTensor outputTensor, bool filterFuture, double roiScale,
-    bool separateClasses) noexcept
+void createHeatMapImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, std::vector<int64_t> timeIdxs,
+    DaliTensor outputTensor, bool filterFuture, double roiScale, bool separateClasses) noexcept
 {
     const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
 
@@ -192,8 +185,7 @@ void createHeatMapImageMulti(ConstDaliTensor xTensor, ConstDaliTensor yTensor, C
 
     for (std::size_t outputIdx = 0; outputIdx < timeIdxs.size(); ++outputIdx)
     {
-        createHeatmapImage(xTensor, yTensor, tTensor, wTensor, lTensor, mask_, classTensor, timeIdxs[outputIdx],
-            outputTensor, outputIdx, roiScale, separateClasses);
+        createHeatmapImage(stateTensor, mask_, timeIdxs[outputIdx], outputTensor, outputIdx, roiScale, separateClasses);
     }
 }
 
@@ -230,13 +222,8 @@ std::vector<int64_t> generateTimeIdxs(
 template <>
 void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
 {
-    const auto& xTensor = ws.Input<::dali::CPUBackend>(0);
-    const auto& yTensor = ws.Input<::dali::CPUBackend>(1);
-    const auto& tTensor = ws.Input<::dali::CPUBackend>(2);
-    const auto& wTensor = ws.Input<::dali::CPUBackend>(3);
-    const auto& lTensor = ws.Input<::dali::CPUBackend>(4);
-    const auto& maskTensor = ws.Input<::dali::CPUBackend>(5);
-    const auto& classTensor = ws.Input<::dali::CPUBackend>(6);
+    const auto& stateTensor = ws.Input<::dali::CPUBackend>(0);
+    const auto& maskTensor = ws.Input<::dali::CPUBackend>(1);
 
     auto& outputTensor = ws.Output<::dali::CPUBackend>(0);
     auto& outputTimeIdx = ws.Output<::dali::CPUBackend>(1);
@@ -253,8 +240,7 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
         tPool.AddWork(
             [&, sampleId](int thread_id)
             {
-                createHeatMapImageMulti(xTensor[sampleId], yTensor[sampleId], tTensor[sampleId], wTensor[sampleId],
-                    lTensor[sampleId], maskTensor[sampleId], classTensor[sampleId], timeIdx, outputTensor[sampleId],
+                createHeatMapImageMulti(stateTensor[sampleId], maskTensor[sampleId], timeIdx, outputTensor[sampleId],
                     mFilterFuture, mROIScale, mSeparateClasses);
                 outputTimeIdxType.Copy<::dali::CPUBackend, ::dali::CPUBackend>(
                     outputTimeIdx.raw_mutable_tensor(sampleId), timeIdx.data(), timeIdx.size(), 0);
@@ -268,10 +254,10 @@ DALI_REGISTER_OPERATOR(OccupancyMask, ::occupancyop::OccupancyMaskGenerator<::da
 
 DALI_SCHEMA(OccupancyMask)
     .DocStr(
-        "Generates occupancy mask from x,y,t,l,w at different time points where the inputs x,y already normalised "
-        "between [-1,1] from masked normalise step and l,w are normalized with the same scaling factor, also returns "
-        "the time index of the sample")
-    .NumInput(7)
+        "Generates occupancy mask from x,y,t,l,w at different time points where the inputs x,y,t are already "
+        "normalised between [-1,1] from masked normalise step and l,w are normalized with the same scaling factor, "
+        "also returns the time index of the sample")
+    .NumInput(2)
     .NumOutput(2)
     .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
     .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
