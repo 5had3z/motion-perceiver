@@ -8,7 +8,7 @@ import torch
 from torch import nn, Tensor
 
 from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA
-from ._oadapter import HeatmapOA, ClassHeatmapOA, ClassificationOA
+from ._oadapter import HeatmapOA, ClassHeatmapOA, ClassificationOA, OccupancyFlowOA
 from . import perceiver_io as pio
 
 
@@ -747,7 +747,7 @@ class MotionEncoderContext(nn.Module):
 
         enc_roadgraph = self.roadgraph_encoder(roadgraph)
         if roadgraph_mask is None:
-            roadgraph_mask = torch.ones(
+            roadgraph_mask = torch.zeros(
                 enc_roadgraph.shape[:-1], device=enc_roadgraph.device
             )
 
@@ -988,9 +988,11 @@ class MotionPerceiver(nn.Module):
 
         # Setup Decoder
         out_adapt = decoder.pop("adapter")
-        out_adapter = {"heatmap": HeatmapOA, "classheatmap": ClassHeatmapOA}[
-            out_adapt["type"].lower()
-        ](**out_adapt["args"])
+        out_adapter = {
+            "heatmap": HeatmapOA,
+            "classheatmap": ClassHeatmapOA,
+            "occupancy_flow": OccupancyFlowOA,
+        }[out_adapt["type"].lower()](**out_adapt["args"])
         self.decoder = pio.PerceiverDecoder(
             output_adapter=out_adapter,
             num_latent_channels=self.encoder.latent_dim,
@@ -1032,17 +1034,36 @@ class MotionPerceiver(nn.Module):
         if roadgraph is not None and roadgraph.size():
             assert roadgraph_valid is not None
             kwargs["road"] = roadgraph
-            kwargs["road_mask"] = roadgraph_valid.bool()
+            kwargs["road_mask"] = ~roadgraph_valid.bool()
 
         if roadmap is not None and roadmap.size():
             kwargs["road"] = roadmap
 
         if signals is not None and signals.size():
             assert signals_valid is not None
-            kwargs["signals"] = signals.transpose(0, 1)
-            kwargs["signals_mask"] = signals_valid.transpose(0, 1).bool()
+            kwargs["signals"] = signals.moveaxis((2, 0), (0, 1))
+            kwargs["signals_mask"] = ~signals_valid.transpose(0, 1).bool()
 
         x_latents: List[Tensor] = self.encoder(**kwargs)
+
+        # from matplotlib import pyplot as plt
+
+        # for bidx in range(0, 5):
+        #     Path.mkdir(Path.cwd() / str(bidx), exist_ok=True)
+        #     for idx, latent in enumerate(x_latents):
+        #         plt.figure(figsize=(16, 10))
+        #         plt.imshow(latent[bidx].cpu().numpy())
+        #         plt.tight_layout()
+        #         plt.savefig(f"{bidx}/{idx}_latent.png")
+        #         plt.close()
+
+        # Path.mkdir(Path.cwd() / "diff", exist_ok=True)
+        # for idx, latent in enumerate(x_latents):
+        #     plt.figure(figsize=(16, 10))
+        #     plt.imshow((latent[0] - latent[1]).cpu().numpy())
+        #     plt.tight_layout()
+        #     plt.savefig(f"diff/{idx}_latent.png")
+        #     plt.close()
 
         x_logits = []  # [T,{K:[B,H,W]}]
         for x_latent in x_latents:
@@ -1050,7 +1071,16 @@ class MotionPerceiver(nn.Module):
 
         out_logits = {}  # {K:[B,T,H,W]}
         for logit_name in x_logits[0]:
-            out_logits[logit_name] = torch.cat([x[logit_name] for x in x_logits], dim=1)
+            if "heatmap" in logit_name:
+                out_logits[logit_name] = torch.cat(
+                    [x[logit_name] for x in x_logits], dim=1
+                )
+            elif "flow" in logit_name:
+                out_logits[logit_name] = torch.stack(
+                    [x[logit_name] for x in x_logits], dim=2
+                )
+            else:
+                raise NotImplementedError("idk how to handle this yet")
 
         return out_logits
 
@@ -1132,8 +1162,8 @@ class MotionPercieverWSignals(MotionPerceiver):
             "output_idx": time_idx[0],
             "agents": agents.moveaxis((2, 0), (0, 1)),
             "agents_mask": ~agents_valid.moveaxis((2, 0), (0, 1)).bool(),
-            "signals": signals.transpose(0, 1),
-            "signals_mask": signals_valid.transpose(0, 1).bool(),
+            "signals": signals.moveaxis((2, 0), (0, 1)),
+            "signals_mask": ~signals_valid.transpose(0, 1).bool(),
         }
 
         if roadgraph is not None and roadgraph.size():

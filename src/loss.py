@@ -164,7 +164,7 @@ class FlowLoss(nn.Module):
         """"""
         loss: Tensor = self.loss_fn(preds["flow"], targets["flow"], reduction="none")
         if self.only_occupied:
-            loss *= targets["occupancy"]
+            loss *= targets["heatmap"]
 
         return {"flow": self.weight * loss.mean()}
 
