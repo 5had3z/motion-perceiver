@@ -225,11 +225,126 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
     }
     tPool.RunAll();
 }
+
+/**
+ * @brief Create a Heatmap Image at a time interval
+ *
+ * @param dataTensor
+ * @param maskTensor
+ * @param outputTensor Class{x,y}, Timestep, Height, Width
+ * @param timeIdx
+ */
+void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std::size_t inTimeIdx,
+    DaliTensor outputTensor, std::size_t outTimeIdx, double roiScale, bool separateClasses) noexcept
+{
+    const auto outputDims = outputTensor.shape();
+    const auto outputStride = outputDims[2] * outputDims[3] * daliType2size(outputTensor.type());
+    const auto timeStride = outputStride * outputDims[1];
+
+    // Create vector of cv::Mat views of class image tensors
+    std::vector<cv::Mat> flowImages;
+    flowImages.reserve(outputDims[0]);
+    for (auto idx = 0; idx < outputDims[0]; ++idx)
+    {
+        flowImages.emplace_back(outputDims[2], outputDims[3], CV_32F,
+            outputTensor.raw_mutable_data() + idx * timeStride + outputStride * outTimeIdx);
+        flowImages.back().setTo(0);
+    }
+
+    const auto instanceDim = dataTensor.shape()[0];
+    const auto timeDim = dataTensor.shape()[1];
+
+    for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
+    {
+        const auto cIdx = instanceId * timeDim + inTimeIdx;
+        // If valid sample
+        if (maskTensor.data<int>()[cIdx])
+        {
+            const auto data = static_cast<const state_t*>(dataTensor.raw_data())[cIdx];
+
+            const int classIdx = static_cast<int>(data.cls) - 1;
+            if (classIdx < 0 || classIdx > 2)
+                continue; // skip class that isn't vehicle, pedestrian, cyclist
+
+            // Scaling factor from normalized coordinates to pixel coordinates
+            const float xScale = outputDims[3] / 2.f;
+            const float yScale = outputDims[2] / 2.f;
+
+            // Calulate bbox in image coordinates
+            // transform absolute position from -1,1 to 0,1 before pixel scaling factor
+            const float x = (data.x / roiScale + 1.f) * xScale;
+            const float y = (data.y / roiScale + 1.f) * yScale;
+            const float width = data.w / roiScale * xScale;
+            const float length = data.l / roiScale * yScale;
+
+            // Find polyPoints
+            auto polyPoints = poseToPoly(x, y, data.yaw * M_PI, width, length);
+
+            // Apply to image
+            cv::fillConvexPoly(flowImages[separateClasses ? 2 * classIdx : 0], polyPoints, cv::Scalar(data.vx));
+            cv::fillConvexPoly(flowImages[separateClasses ? 2 * classIdx + 1 : 1], polyPoints, cv::Scalar(data.vy));
+        }
+    }
+}
+
+/**
+ * @brief Run over multiple time indexes
+ */
+void createFlowImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, ConstDaliTensor timeIdxs,
+    DaliTensor outputTensor, bool filterFuture, double roiScale, bool separateClasses) noexcept
+{
+    const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
+
+    auto mask_ = filterFuture ? ConstDaliTensor(futureMask.data(), maskTensor.shape()) : maskTensor;
+
+    for (int64_t outputIdx = 0; outputIdx < timeIdxs.shape()[0]; ++outputIdx)
+    {
+        createFlowImage(
+            stateTensor, mask_, timeIdxs.data<int>()[outputIdx], outputTensor, outputIdx, roiScale, separateClasses);
+    }
+}
+
+template <>
+void FlowMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
+{
+    const auto& stateTensor = ws.Input<::dali::CPUBackend>(0);
+    const auto& maskTensor = ws.Input<::dali::CPUBackend>(1);
+    const auto& timeTensor = ws.Input<::dali::CPUBackend>(2);
+
+    auto& outputTensor = ws.Output<::dali::CPUBackend>(0);
+    auto& tPool = ws.GetThreadPool();
+
+    for (int sampleId = 0; sampleId < ws.GetRequestedBatchSize(0); ++sampleId)
+    {
+        tPool.AddWork(
+            [&, sampleId](int)
+            {
+                createFlowImageMulti(stateTensor[sampleId], maskTensor[sampleId], timeTensor[sampleId],
+                    outputTensor[sampleId], mFilterFuture, mROIScale, mSeparateClasses);
+            });
+    }
+    tPool.RunAll();
+}
+
 } // namespace occupancyop
 
 DALI_REGISTER_OPERATOR(OccupancyMask, ::occupancyop::OccupancyMaskGenerator<::dali::CPUBackend>, ::dali::CPU);
 
 DALI_SCHEMA(OccupancyMask)
+    .DocStr(
+        "Generates occupancy mask from x,y,t,l,w at different time points where the inputs x,y,t are already "
+        "normalised between [-1,1] from masked normalise step and l,w are normalized with the same scaling factor, "
+        "also returns the time index of the sample")
+    .NumInput(3)
+    .NumOutput(1)
+    .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
+    .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
+    .AddArg("separate_classes", "Separate classes occupancy into different channels", ::dali::DALIDataType::DALI_BOOL)
+    .AddArg("filter_future", "Filter ids that don't appear in past or current frame", ::dali::DALIDataType::DALI_BOOL);
+
+DALI_REGISTER_OPERATOR(FlowMask, ::occupancyop::FlowMaskGenerator<::dali::CPUBackend>, ::dali::CPU);
+
+DALI_SCHEMA(FlowMask)
     .DocStr(
         "Generates occupancy mask from x,y,t,l,w at different time points where the inputs x,y,t are already "
         "normalised between [-1,1] from masked normalise step and l,w are normalized with the same scaling factor, "
