@@ -47,8 +47,6 @@ _ALL_FEATURES = [
 ]
 # fmt: on
 
-_FEAT_IDX = {f: i for i, f in enumerate(_ALL_FEATURES)}
-
 _TIME_KEYS = ["past", "current", "future"]
 
 
@@ -353,7 +351,7 @@ def waymo_motion_pipe(
         data_out.append(data_vt)
     if all(k in cfg.vehicle_features for k in ["width", "length"]):
         data_out.append(data_wl)
-    if cfg.separate_classes:
+    if "class" in cfg.vehicle_features:
         data_out.append(data_class)
 
     outputs = [fn.cat(*data_out, axis=2), data_valid]

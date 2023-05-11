@@ -201,10 +201,10 @@ class MotionEncoder2(nn.Module):
         max_idx = int(output_idx.max().item()) + 1
         first_input_idx = min(self.input_indicies)
 
-        x_adapt = self.input_adapter(
+        x_adapt, x_mask = self.input_adapter(
             agents[first_input_idx], agents_mask[first_input_idx]
         )
-        x_latent = self.input_layer(in_latent, x_adapt, agents_mask[first_input_idx])
+        x_latent = self.input_layer(in_latent, x_adapt, x_mask)
 
         out_latent = [x_latent] if 0 in output_idx else []
 

@@ -25,9 +25,10 @@ class MotionPerceiverConfig(TorchModelConfig):
             sz = [1, sz, sz]
             model_cfg["encoder"]["roadgraph_ia"]["args"]["image_shape"] = sz
 
-        # Number of "extra features" is number of vehicle features minus xyt
-        model_cfg["encoder"]["adapter"]["args"]["n_extra_features"] = (
-            len(props["vehicle_features"]) - 3
+        # Number of "extra features" is number of vehicle features minus xyt and class
+        _skip_labels = {"x", "y", "bbox_yaw", "class"}
+        model_cfg["encoder"]["adapter"]["args"]["n_extra_features"] = len(
+            [x for x in props["vehicle_features"] if x not in _skip_labels]
         )
 
         sz = props["occupancy_size"]
