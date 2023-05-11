@@ -102,7 +102,9 @@ class WaymoDatasetConfig(DatasetConfig):
         if self.signal_features:
             output_map.extend(["signals", "signals_valid"])
         if self.occupancy_size > 0:
-            output_map.extend(["heatmap", "time_idx"])
+            output_map.extend(["time_idx", "heatmap"])
+        if self.flow_mask:
+            output_map.append("flow")
         if self.scenario_id:
             output_map.append("scenario_id")
 
@@ -426,6 +428,18 @@ def waymo_motion_pipe(
 
     # Add occupancy heatmap
     if cfg.occupancy_size > 0:
+        # Time index sample generation
+        rand_kwargs = {"n_random": cfg.random_heatmap_count}
+        if cfg.random_heatmap_count > 0:
+            assert cfg.random_heatmap_minmax is not None
+            rand_kwargs["min"] = cfg.random_heatmap_minmax[0]
+            rand_kwargs["max"] = cfg.random_heatmap_minmax[1]
+
+        time_idx = fn.mixed_random_generator(
+            always_sample=cfg.heatmap_time, **rand_kwargs
+        )
+
+        # Conat all features
         data_all = fn.cat(
             data_xy, data_yaw, data_vxvy, data_vt, data_wl, data_class, axis=2
         )
@@ -433,23 +447,14 @@ def waymo_motion_pipe(
         occ_kwargs = dict(
             size=cfg.occupancy_size,
             roi=cfg.occupancy_roi,
-            const_time_idx=cfg.heatmap_time,
             filter_future=cfg.filter_future,
             separate_classes=cfg.separate_classes,
         )
 
-        if cfg.random_heatmap_count > 0:
-            assert (
-                cfg.random_heatmap_minmax is not None
-            ), "minmax must be specified if count > 0"
-            occ_kwargs["n_random_idx"] = cfg.random_heatmap_count
-            occ_kwargs["min_random_idx"] = cfg.random_heatmap_minmax[0]
-            occ_kwargs["max_random_idx"] = cfg.random_heatmap_minmax[1]
-
-        outputs.extend(fn.occupancy_mask(data_all, data_valid, **occ_kwargs))
-
+        outputs.append(time_idx)
+        outputs.append(fn.occupancy_mask(data_all, data_valid, time_idx, **occ_kwargs))
         if cfg.flow_mask:
-            outputs.extend(fn.flow_mask(data_all, data_valid, **occ_kwargs))
+            outputs.append(fn.flow_mask(data_all, data_valid, time_idx, **occ_kwargs))
 
     if cfg.scenario_id:
         # Add padding since scenario_id contains <=16 characters

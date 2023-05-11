@@ -32,3 +32,5 @@ add_subdirectory(maskedops)
 add_subdirectory(maskfrompoly)
 
 add_subdirectory(roadgraph)
+
+add_subdirectory(random)
