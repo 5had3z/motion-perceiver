@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from matplotlib import pyplot as plt
+from torchvision.utils import flow_to_image
 
 
 def sequence(data: Dict[str, Tensor]) -> None:
@@ -45,6 +46,7 @@ def sequence(data: Dict[str, Tensor]) -> None:
 
         plt.tight_layout()
         plt.savefig(f"agents_{i}.png")
+        plt.close(f"agents_{i}")
 
 
 def pose_to_poly(pose_data: np.ndarray) -> np.ndarray:
@@ -180,6 +182,18 @@ def resize_occupancy(occ: np.ndarray, roi_scale: float) -> np.ndarray:
         occ, tuple(s // 2 for s in occ.shape), interpolation=cv2.INTER_LINEAR
     )
     return scaled
+
+
+def optical_flow(flow: Tensor) -> None:
+    """Writes images of the flow output as an HSV Image
+    Input is assumed as N,T,2,H,W"""
+    for tidx in range(flow.shape[2]):
+        flow_img = flow_to_image(flow[:, :, tidx])
+        for bidx in range(flow.shape[0]):
+            cv2.imwrite(
+                f"flow_{bidx}_{tidx}.png",
+                np.moveaxis(flow_img[bidx].cpu().numpy(), 0, 2),
+            )
 
 
 def roadmap_and_occupancy(

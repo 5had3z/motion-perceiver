@@ -52,9 +52,9 @@ class HeatmapOA(OutputAdapter):
     def __init__(
         self,
         num_output_channels: int,
-        image_shape: Optional[List[int]] = None,
+        image_shape: Tuple[int, int] | None = None,
     ):
-        self.image_shape = [200, 200] if image_shape is None else image_shape
+        self.image_shape = (200, 200) if image_shape is None else image_shape
 
         super().__init__(
             output_shape=(math.prod(self.image_shape), num_output_channels)
@@ -81,9 +81,9 @@ class ClassHeatmapOA(OutputAdapter):
         self,
         class_names: List[str],
         num_output_channels: int,
-        image_shape: Optional[List[int]] = None,
+        image_shape: Tuple[int, int] | None = None,
     ):
-        self.image_shape = [200, 200] if image_shape is None else image_shape
+        self.image_shape = (200, 200) if image_shape is None else image_shape
 
         super().__init__(
             output_shape=(math.prod(self.image_shape), num_output_channels)
@@ -106,3 +106,25 @@ class ClassHeatmapOA(OutputAdapter):
             )
 
         return output
+
+
+class OccupancyFlowOA(OutputAdapter):
+    """Use two different linear layers to decode occupancy and flow predictions"""
+
+    def __init__(self, num_output_channels: int, image_shape: Tuple[int, int]):
+        self.image_shape = (256, 256) if image_shape is None else image_shape
+        super().__init__(
+            output_shape=(math.prod(self.image_shape), num_output_channels)
+        )
+        self.occupancy = nn.Linear(num_output_channels, 1)
+        self.flow = nn.Linear(num_output_channels, 2)
+
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+        """"""
+        occ = self.occupancy(x).permute(0, 2, 1)
+        occ = occ.reshape(x.shape[0], 1, *self.image_shape)
+
+        flow = self.flow(x).permute(0, 2, 1)
+        flow = flow.reshape(x.shape[0], 2, *self.image_shape)
+
+        return {"heatmap": occ, "flow": flow}

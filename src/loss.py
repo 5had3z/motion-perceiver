@@ -5,7 +5,12 @@ from dataclasses import dataclass, asdict
 
 import torch
 from torch import nn, Tensor
-from torch.nn.functional import binary_cross_entropy_with_logits
+from torch.nn.functional import (
+    binary_cross_entropy_with_logits,
+    mse_loss,
+    l1_loss,
+    huber_loss,
+)
 
 from konductor.modules.losses import REGISTRY, LossConfig, ExperimentInitConfig
 
@@ -124,6 +129,7 @@ class SignalCE(nn.CrossEntropyLoss):
 
         # Apply mask to zero out invalid signal indicies
         loss *= valid_signal.flatten()
+
         return {"signal_bce": self._weight * loss.mean()}
 
 
@@ -138,3 +144,41 @@ class SignalBCEConfig(LossConfig):
         kwargs = asdict(self)
         del kwargs["names"]
         return SignalCE(**kwargs)
+
+
+class FlowLoss(nn.Module):
+    """Apply regression loss to predicted occupancy flow"""
+
+    def __init__(self, loss_type: str, weight=1.0, only_occupied: bool = True) -> None:
+        """
+        only_occupied: only apply loss where occupancy is present
+        """
+        super().__init__()
+        self.weight = weight
+        self.only_occupied = only_occupied
+        self.loss_fn = {"huber": huber_loss, "mse": mse_loss, "l1": l1_loss}[loss_type]
+
+    def forward(
+        self, preds: Dict[str, Tensor], targets: Dict[str, Tensor]
+    ) -> Dict[str, Tensor]:
+        """"""
+        loss: Tensor = self.loss_fn(preds["flow"], targets["flow"], reduction="none")
+        if self.only_occupied:
+            loss *= targets["heatmap"]
+
+        return {"flow": self.weight * loss.mean()}
+
+
+@dataclass
+@REGISTRY.register_module("occupancy_flow")
+class FlowLossConfig(LossConfig):
+    loss_type: str = "huber"
+
+    @classmethod
+    def from_config(cls, config: ExperimentInitConfig, idx: int):
+        return super().from_config(config, idx, names=["flow"])
+
+    def get_instance(self) -> Any:
+        kwargs = asdict(self)
+        del kwargs["names"]
+        return FlowLoss(**kwargs)

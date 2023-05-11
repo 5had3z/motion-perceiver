@@ -73,6 +73,8 @@ def setup(cli_args: NS) -> Trainer:
     statistics: Dict[str, Type[Statistic]] = {"occupancy": src.statistics.Occupancy}
     if exp_config.model[0].args.get("signal_decoder", False):
         statistics["signal-forecast"] = src.statistics.Signal
+    if exp_config.data[0].dataset.args.get("flow_mask", False):
+        statistics["flow-predict"] = src.statistics.Flow
 
     return init_training(
         exp_config, Trainer, trainer_config, statistics, PyTorchTrainerModules

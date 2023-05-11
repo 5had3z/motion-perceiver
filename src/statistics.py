@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 from scipy import integrate
 from torch import Tensor
+from torch.nn.functional import l1_loss, mse_loss
 from konductor.metadata.statistics import Statistic, STATISTICS_REGISTRY
 
 
@@ -69,14 +70,14 @@ class Occupancy(Statistic):
         target_binary = target.bool()
 
         # ensure 0,0 -> 1,1 with 1 and 0 thresholds
-        thresholds = np.concatenate(
-            [
-                np.linspace(1, 0.8, 21),
-                np.linspace(0.7, 0.3, 5),
-                np.linspace(0.20, 0, 21),
-            ]
-        )
-        # thresholds = np.linspace(1, 0, 100)
+        # thresholds = np.concatenate(
+        #     [
+        #         np.linspace(1, 0.8, 21),
+        #         np.linspace(0.7, 0.3, 5),
+        #         np.linspace(0.20, 0, 21),
+        #     ]
+        # )
+        thresholds = np.linspace(1, 0, 100)  # Parity with Waymo
         tpr = np.empty((len(thresholds), target.shape[0]))
         fpr = np.empty((len(thresholds), target.shape[0]))
         for idx, threshold in enumerate(thresholds):
@@ -209,3 +210,52 @@ class Signal(Statistic):
 
         for acc, tidx in zip(accuracy, targets["time_idx"][0]):
             self._append_sample(f"Acc_{tidx.item()}", acc.item())
+
+
+class Flow(Statistic):
+    sort_lambda = {"mse": min, "l1": min}
+
+    @classmethod
+    def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
+        time_idxs = set()
+        if "random_heatmap_minmax" in kwargs:
+            _min, _max = kwargs["random_heatmap_minmax"]
+            time_idxs.update(set(range(_min, _max + 1)))
+        if "heatmap_time" in kwargs:
+            time_idxs.update(set(kwargs["heatmap_time"]))
+
+        return cls(
+            time_idxs=sorted(list(time_idxs)),
+            buffer_length=buffer_length,
+            writepath=writepath,
+            reduce_batch=True,
+        )
+
+    def __init__(self, time_idxs: List[int], **kwargs) -> None:
+        super().__init__(logger_name="FlowEval", **kwargs)
+        self.time_idxs = time_idxs
+
+        # Create statistic keys
+        data_keys = []
+        for key in Flow.sort_lambda:
+            data_keys.extend([f"{key}_{t}" for t in time_idxs])
+
+        # Add Statistic Keys and dummy buffer
+        for key in data_keys:
+            self._statistics[key] = np.empty(0)
+
+        self.reset()
+
+    def __call__(self, it: int, prd: Dict[str, Tensor], tgt: Dict[str, Tensor]) -> None:
+        """"""
+        super().__call__(it)
+
+        fn = {"mse": mse_loss, "l1": l1_loss}
+
+        mask_time = tgt["heatmap"].transpose(0, 2)
+        for key in Flow.sort_lambda:
+            perf = fn[key](prd["flow"], tgt["flow"], reduction="none") * tgt["heatmap"]
+            perf_time = perf.transpose(0, 2)
+            for acc, mask, tidx in zip(perf_time, mask_time, tgt["time_idx"][0]):
+                acc = acc.sum(dim=[0, 2, 3]) / mask.sum(dim=[0, 2, 3])
+                self._append_sample(f"{key}_{tidx.item()}", acc.mean().item())
