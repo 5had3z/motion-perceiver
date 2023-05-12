@@ -173,6 +173,7 @@ class FlowLoss(nn.Module):
 @REGISTRY.register_module("occupancy_flow")
 class FlowLossConfig(LossConfig):
     loss_type: str = "huber"
+    only_occupied: bool = True
 
     @classmethod
     def from_config(cls, config: ExperimentInitConfig, idx: int):
