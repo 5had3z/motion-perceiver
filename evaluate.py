@@ -1,6 +1,5 @@
 """Overrides model and dataloader params to generate the full video"""
 import argparse
-from functools import partial
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set
@@ -12,6 +11,7 @@ from matplotlib import pyplot as plt
 import torch
 from tqdm.auto import tqdm
 from torch import Tensor, inference_mode
+from torchvision.utils import flow_to_image
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 from src.dataset.waymo import WaymoDatasetConfig
@@ -43,7 +43,80 @@ def scenairo_id_tensor_2_str(batch_ids: Tensor) -> List[str]:
     return ["".join([chr(c) for c in id_chars]) for id_chars in batch_ids]
 
 
-def create_rgb_frame(
+def apply_ts_text(ts: int, frame: np.ndarray, extra: str = "") -> np.ndarray:
+    """Apply timestamp text to image frame and optional "extra" text underneath"""
+    text_args = [cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2, cv2.LINE_AA]
+
+    if ts < 10:
+        text = "past"
+    elif ts == 10:
+        text = "present"
+    else:
+        text = "future"
+    text += f": {ts-10:+}"
+
+    frame = cv2.putText(frame, text, (25, 50), *text_args)
+
+    if extra:
+        frame = cv2.putText(frame, extra, (25, 75), *text_args)
+
+    return frame
+
+
+def create_flow_frame(
+    pred_flow: np.ndarray,
+    pred_occ: np.ndarray,
+    truth_flow: np.ndarray,
+    frame_size: Tuple[int, int],
+    mask_thresh=0.5,
+) -> np.ndarray:
+    """Create a side-by-side frame of predicted occupancy flow and ground truth,
+    mask out predicted flow with predicted occupancy over a threshold
+    A threshold of zero is obviously no threshold (show all flow for every pixel)
+    """
+    pred_flow_rgb = flow_to_image(torch.tensor(pred_flow)).numpy()
+    pred_flow_rgb[:, pred_occ < mask_thresh] = 255  # set to white
+    truth_flow_rgb = flow_to_image(torch.tensor(truth_flow)).numpy()
+    rgb_frame = cv2.hconcat(
+        [np.moveaxis(pred_flow_rgb, 0, 2), np.moveaxis(truth_flow_rgb, 0, 2)]
+    )
+    rgb_frame = cv2.resize(rgb_frame, frame_size, interpolation=cv2.INTER_LINEAR)
+    return rgb_frame
+
+
+def write_flow_video(
+    pred_flow_sequence: np.ndarray,
+    pred_occ_sequence: np.ndarray,
+    truth_flow_sequence: np.ndarray,
+    path: Path,
+    mask_thresh=0.5,
+):
+    """"""
+    video_shape = (1600, 800)
+    v_writer = cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10, video_shape
+    )
+
+    if not v_writer.isOpened():
+        raise RuntimeError(f"Can't write video, writer not open: {path}")
+
+    for idx in range(pred_flow_sequence.shape[1]):
+        rgb_frame = create_flow_frame(
+            pred_flow_sequence[:, idx],
+            pred_occ_sequence[idx],
+            truth_flow_sequence[:, idx],
+            video_shape,
+            mask_thresh,
+        )
+
+        rgb_frame = apply_ts_text(idx, rgb_frame, extra=f"pr>{mask_thresh}")
+
+        v_writer.write(rgb_frame)
+
+    v_writer.release()
+
+
+def create_occupancy_frame(
     ground_truth: np.ndarray,
     prediction: np.ndarray,
     resolution: Tuple[int, int],
@@ -89,7 +162,7 @@ def create_rgb_frame(
     return bgr_frame
 
 
-def write_video(
+def write_occupancy_video(
     data: np.ndarray,
     pred: np.ndarray,
     path: Path,
@@ -107,8 +180,6 @@ def write_video(
     if not v_writer.isOpened():
         raise RuntimeError(f"Can't write video, writer not open: {path}")
 
-    text_args = [cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2, cv2.LINE_AA]
-
     if roadmap is not None:
         if len(roadmap.shape) == 3:
             roadmap = roadmap.squeeze(0)
@@ -119,20 +190,12 @@ def write_video(
         roadmap = cv2.resize(roadmap, video_shape, interpolation=cv2.INTER_NEAREST)
 
     for idx, (pred_frame, data_frame) in enumerate(zip(pred, data)):
-        rgb_frame = create_rgb_frame(
+        rgb_frame = create_occupancy_frame(
             data_frame, pred_frame, video_shape, roadmap, thresh
         )
-        if idx < 10:
-            text = "past"
-        elif idx == 10:
-            text = "present"
-        else:
-            text = "future"
-        text += f": {idx-10:+}"
-        rgb_frame = cv2.putText(rgb_frame, text, (25, 50), *text_args)
-        if thresh is not None:
-            rgb_frame = cv2.putText(rgb_frame, f"pr>{thresh}", (25, 75), *text_args)
-
+        rgb_frame = apply_ts_text(
+            idx, rgb_frame, extra=f"pr>{thresh}" if thresh else ""
+        )
         v_writer.write(rgb_frame)
 
     v_writer.release()
@@ -147,12 +210,13 @@ def write_video_batch(
     roadmap_scale: float = 1.0,
 ) -> None:
     """Write batch of videos"""
-    mpool = mp.Pool(processes=8)
+    mpool = mp.Pool(processes=mp.cpu_count() // 2)
     bz = data["heatmap"].shape[0]
 
-    video_fn = (
-        partial(write_video, thresh=threshold) if threshold is not None else write_video
-    )
+    print("enqueuing occupancy videos")
+    occ_path = path / "occupancy"
+    if not occ_path.exists():
+        occ_path.mkdir(parents=True)
 
     if "roadmap" in data:
         roadmap_batch = data["roadmap"].cpu().numpy()
@@ -164,14 +228,36 @@ def write_video_batch(
             zip(data["heatmap"][:, cls_idx], pred[cls_name], roadmap_batch)
         ):
             mpool.apply_async(
-                video_fn,
+                write_occupancy_video,
                 kwds=dict(
                     data=sample.cpu().numpy(),
                     pred=pred_cls.sigmoid().cpu().numpy(),
                     roadmap=roadmap,
-                    path=path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.avi",
+                    path=occ_path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.avi",
                     roadmap_scale=roadmap_scale,
+                    thresh=threshold,
                 ),
+            )
+
+    if "flow" in pred:
+        print("enqueuing flow videos")
+        flow_path = path / "flow"
+        if not flow_path.exists():
+            flow_path.mkdir(parents=True)
+
+        for b_idx, (p_flow, p_occ, t_flow) in enumerate(
+            zip(pred["flow"], pred["heatmap"], data["flow"])
+        ):
+            # Deadlock here for some reason when threadding? Maybe use of torch inside?
+            # mpool.apply_async(
+            write_flow_video(
+                # kwds=dict(
+                pred_flow_sequence=p_flow.cpu().numpy(),
+                pred_occ_sequence=p_occ.sigmoid().cpu().numpy(),
+                truth_flow_sequence=t_flow.cpu().numpy(),
+                path=flow_path / f"flow_{global_it*bz + b_idx}.avi",
+                mask_thresh=0.5,
+                # ),
             )
 
     mpool.close()
@@ -247,11 +333,6 @@ def statistic_evaluation(
     config: EvalConfig,
 ) -> None:
     """"""
-    vid_path = config.path / "occupancy_video"
-
-    if not vid_path.exists():
-        vid_path.mkdir(parents=True)
-
     max_samples = max(config.n_videos, config.n_statistic)
     # if not set run over whole dataset for statistics
     # if we're using the filter_ids, run over that dataset
@@ -292,7 +373,7 @@ def statistic_evaluation(
                 write_video_batch(
                     data,
                     outputs,
-                    vid_path,
+                    config.path,
                     pbar.n,
                     config.video_thresh,
                     config.roi_scale,
