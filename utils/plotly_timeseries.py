@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import List
-import difflib
 
 import pandas as pd
 from dash import html, dcc, Input, Output, callback
@@ -20,40 +19,6 @@ layout = html.Div(
             [
                 dcc.Dropdown(id="dd-metric", options=["IoU", "AUC"]),
                 dcc.Graph(id="timeseries-graph", selectedData={}),
-            ]
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    [
-                        dcc.Dropdown(id="left-select"),
-                        dcc.Textarea(
-                            id="left-comp",
-                            readOnly=True,
-                            style={"width": "100%", "height": 300},
-                        ),
-                    ]
-                ),
-                dbc.Col(
-                    [
-                        html.H4("Config Difference", style={"text-align": "center"}),
-                        dcc.Textarea(
-                            id="diff-comp",
-                            readOnly=True,
-                            style={"width": "100%", "height": 300},
-                        ),
-                    ]
-                ),
-                dbc.Col(
-                    [
-                        dcc.Dropdown(id="right-select"),
-                        dcc.Textarea(
-                            id="right-comp",
-                            readOnly=True,
-                            style={"width": "100%", "height": 300},
-                        ),
-                    ]
-                ),
             ]
         ),
     ]
@@ -93,45 +58,3 @@ def update_graph(metric: str):
         )
 
     return fig
-
-
-@callback(Output("left-comp", "value"), Input("left-select", "value"))
-def update_left(exp_name):
-    if not exp_name:
-        raise PreventUpdate
-    exp = next(x for x in EXPERIMENTS if x.name == exp_name)
-    with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
-        s = f.read()
-    return s
-
-
-@callback(Output("right-comp", "value"), Input("right-select", "value"))
-def update_right(exp_name):
-    if not exp_name:
-        raise PreventUpdate
-    exp = next(x for x in EXPERIMENTS if x.name == exp_name)
-    with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
-        s = f.read()
-    return s
-
-
-@callback(
-    Output("diff-comp", "value"),
-    Input("left-select", "value"),
-    Input("right-select", "value"),
-)
-def diff_files(left_file, right_file):
-    if not all([left_file, right_file]):
-        raise PreventUpdate
-
-    exp = next(x for x in EXPERIMENTS if x.name == left_file)
-    with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
-        left = f.readlines()
-
-    exp = next(x for x in EXPERIMENTS if x.name == right_file)
-    with open(exp.root / "train_config.yml", "r", encoding="utf-8") as f:
-        right = f.readlines()
-
-    diff = difflib.unified_diff(left, right, fromfile=left_file, tofile=right_file)
-
-    return "".join([d for d in diff])
