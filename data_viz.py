@@ -11,19 +11,19 @@ import src.dataset.visualisation as dv
 import src.dataset.utils as du
 
 
-def run_viz(loader: DALIGenericIterator) -> None:
+def run_viz(loader: DALIGenericIterator, config: WaymoDatasetConfig) -> None:
     for data in loader:
         data: Dict[str, Tensor] = data[0]  # remove list dim
         # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
         # dv.roadmap(data["roadmap"])
         # dv.optical_flow(data["flow"])
-        # mv.roadmap_and_occupancy(
-        #     data["roadmap"],
-        #     data["heatmap"],
-        #     data["signals"],
-        #     roi_scale=waymo.occupancy_roi,
-        # )
-        dv.scatterplot_sequence(data)
+        dv.roadmap_and_occupancy(
+            data["roadmap"],
+            data["heatmap"],
+            data["signals"],
+            roi_scale=config.occupancy_roi,
+        )
+        # dv.scatterplot_sequence(data)
         # dv.occupancy_from_current_pose(data)
 
         break
@@ -31,7 +31,7 @@ def run_viz(loader: DALIGenericIterator) -> None:
 
 @inference_mode()
 def main():
-    batch_size = 64
+    batch_size = 8
     waymo = WaymoDatasetConfig(
         train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         val_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
@@ -53,8 +53,8 @@ def main():
         velocity_norm=4.0,
     )
     dataloader: DALIGenericIterator = get_dataloader(waymo, Mode.val)
-    # run_viz(dataloader)
-    du.velocity_distribution(dataloader, batch_size * 10)
+    run_viz(dataloader, waymo)
+    # du.velocity_distribution(dataloader, batch_size * 10)
 
 
 if __name__ == "__main__":

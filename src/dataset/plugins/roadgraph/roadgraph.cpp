@@ -111,7 +111,7 @@ inline bool isValidRL(int64_t valid, int64_t type)
 }
 
 void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor, ConstDaliTensor idTensor,
-    ConstDaliTensor validTensor, ConstDaliTensor tfTensor, float normalisaiton, int32_t markingFlags,
+    ConstDaliTensor validTensor, ConstDaliTensor tfTensor, float normalisaiton, uint32_t markingFlags,
     DaliTensor imageTensor)
 {
     const auto outputDims = imageTensor.shape();
@@ -145,10 +145,12 @@ void createRoadGraphImage(ConstDaliTensor xyzTensor, ConstDaliTensor typeTensor,
     for (int64_t idx = 1; idx < maxIdx; ++idx)
     {
         const auto featureType = static_cast<FeatureType>(typePtr[idx]);
-        bool predicate = validPtr[idx - 1] && validPtr[idx];
+        bool predicate{false};
+        predicate |= isLaneCenterType(featureType) && (markingFlags & 1 << RoadMarkingType::LANECENTER);
+        predicate |= isRoadLineType(featureType) && (markingFlags & 1 << RoadMarkingType::ROADLINE);
+        predicate |= isRoadEdgeType(featureType) && (markingFlags & 1 << RoadMarkingType::ROADEDGE);
+        predicate &= validPtr[idx - 1] && validPtr[idx];
         predicate &= idPtr[idx - 1] == idPtr[idx];
-        predicate &= ~(markingFlags & RoadMarkingType::LANECENTER) || isLaneCenterType(featureType);
-        predicate &= ~(markingFlags & RoadMarkingType::ROADLINE) || isRoadLineType(featureType);
 
         if (!predicate)
         {

@@ -15,7 +15,7 @@ template <typename Backend>
 class RoadGraphImage : public ::dali::Operator<Backend>
 {
 private:
-    int32_t mMarkingFlags{0};
+    uint32_t mMarkingFlags{0};
     float mNormalizeFactor{0};
     int64_t mImageSize{0};
 
@@ -35,6 +35,7 @@ public:
     {
         mMarkingFlags |= spec.GetArgument<bool>("lane_center") << MarkingTypes::LANECENTER;
         mMarkingFlags |= spec.GetArgument<bool>("lane_markings") << MarkingTypes::ROADLINE;
+        mMarkingFlags |= spec.GetArgument<bool>("lane_markings") << MarkingTypes::ROADEDGE;
     }
 
     virtual inline ~RoadGraphImage() = default;

@@ -374,7 +374,8 @@ def waymo_motion_pipe(
                 xy_tf,
                 size=cfg.roadmap_size,
                 normalize_value=cfg.map_normalize,
-                lane_center=True,
+                # lane_center=True,
+                lane_markings=True,
             )
         )
 
