@@ -9,9 +9,8 @@ from matplotlib import pyplot as plt
 from torchvision.utils import flow_to_image
 
 
-def sequence(data: Dict[str, Tensor]) -> None:
-    """Plot world-lines of instances and heatmap at chosen keyframe"""
-
+def occupancy_sequence(data: Dict[str, Tensor]):
+    """Print images of occpancy for each class over time"""
     for i, (heatmap, bt_idx) in enumerate(zip(data["heatmap"], data["time_idx"])):
         occ: np.ndarray = heatmap.cpu().to(torch.uint8).numpy() * 255
         save_dir = Path(f"occupancy_{i}")
@@ -24,6 +23,9 @@ def sequence(data: Dict[str, Tensor]) -> None:
                     cv2.flip(occ_t, 0),
                 )
 
+
+def scatterplot_sequence(data: Dict[str, Tensor]) -> None:
+    """Plot world-lines of instances"""
     for i, (seq, valid) in enumerate(zip(data["agents"], data["agents_valid"])):
         plt.figure(f"agents_{i}", figsize=(20, 20))
         plt.xlim((-1, 1))

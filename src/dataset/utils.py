@@ -3,8 +3,12 @@ Extra utilities for calculating the maximum map size and
 the percentage of vehicles in the scene occluded
 """
 from typing import Dict
+from matplotlib import pyplot as plt
 
+import numpy as np
 import torch
+from tqdm.auto import tqdm
+from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 
@@ -14,7 +18,6 @@ def check_maximum_map_size(dataloaders: Dict[str, DALIGenericIterator]) -> None:
     This is required for calibration of the output map.
     Such that it can cover the entire range of data.
     """
-    from tqdm.auto import tqdm
 
     max_x_range, max_y_range = torch.tensor(0).cuda(), torch.tensor(0).cuda()
     with tqdm(
@@ -22,7 +25,7 @@ def check_maximum_map_size(dataloaders: Dict[str, DALIGenericIterator]) -> None:
     ) as pbar:
         for dataloader in dataloaders.values():
             for data in dataloader:
-                data: Dict[str, torch.Tensor] = data[0]
+                data: Dict[str, Tensor] = data[0]
                 alldata = torch.cat(
                     [data["past"], data["current"], data["future"]], dim=2
                 )
@@ -60,9 +63,6 @@ def evaluate_vehicle_occulsions(
     dataloaders: Dict[str, DALIGenericIterator], max_samples: int = 0
 ) -> None:
     """Determine the percentage of observed vehciles remaining at later timesteps"""
-    from tqdm.auto import tqdm
-    import numpy as np
-    from matplotlib import pyplot as plt
 
     n_samples = (
         10000
@@ -79,7 +79,7 @@ def evaluate_vehicle_occulsions(
                     n_samples = pbar.n  # change to actual samples
                     break  # jump out at max samples
 
-                valid_agents: torch.Tensor = data[0]["agents_valid"]  # B,N,T
+                valid_agents: Tensor = data[0]["agents_valid"]  # B,N,T
 
                 # mask out occluded agents (not observed in past or present)
                 observed_agents = valid_agents[..., 0:11].sum(dim=2) > 0
@@ -111,3 +111,19 @@ def evaluate_vehicle_occulsions(
     plt.ylabel("% Agents Observed")
     plt.tight_layout()
     plt.savefig("waymo_agent_decay.png")
+
+
+def velocity_distribution(loader: DALIGenericIterator, n_samples: int) -> None:
+    """Sampe the data a few times and find an
+    approximate mean-variance to vehicle velocity"""
+    all_data = []
+    for idx, data in tqdm(enumerate(loader), total=n_samples // loader.batch_size + 1):
+        data: Dict[str, Tensor] = data[0]
+        vel = data["agents"][data["agents_valid"] > 0][:, 3:5]
+        all_data.append(vel)
+
+        if idx * loader.batch_size > n_samples:
+            break
+
+    all_data = torch.cat(all_data)
+    print(f"mean {all_data.mean(dim=0)}, var: {all_data.var(dim=0)}")

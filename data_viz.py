@@ -2,15 +2,36 @@
 to validate its doing the right thing"""
 from typing import Dict
 
-from torch import Tensor
+from torch import Tensor, inference_mode
 from konductor.modules.data import ModuleInitConfig, Mode, get_dataloader
+from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 from src.dataset.waymo import WaymoDatasetConfig
-import src.dataset.visualisation as mv
+import src.dataset.visualisation as dv
+import src.dataset.utils as du
 
 
+def run_viz(loader: DALIGenericIterator) -> None:
+    for data in loader:
+        data: Dict[str, Tensor] = data[0]  # remove list dim
+        # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
+        # dv.roadmap(data["roadmap"])
+        # dv.optical_flow(data["flow"])
+        # mv.roadmap_and_occupancy(
+        #     data["roadmap"],
+        #     data["heatmap"],
+        #     data["signals"],
+        #     roi_scale=waymo.occupancy_roi,
+        # )
+        dv.scatterplot_sequence(data)
+        # dv.occupancy_from_current_pose(data)
+
+        break
+
+
+@inference_mode()
 def main():
-    batch_size = 4
+    batch_size = 64
     waymo = WaymoDatasetConfig(
         train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         val_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
@@ -30,22 +51,9 @@ def main():
         only_vehicles=True,
         flow_mask=True,
     )
-    dataloader = get_dataloader(waymo, Mode.val)
-
-    for data in dataloader:
-        data: Dict[str, Tensor] = data[0]  # remove list dim
-        # mv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
-        # mv.roadmap(data["roadmap"])
-        mv.optical_flow(data["flow"])
-        # mv.roadmap_and_occupancy(
-        #     data["roadmap"],
-        #     data["heatmap"],
-        #     data["signals"],
-        #     roi_scale=waymo.occupancy_roi,
-        # )
-        # mv.sequence(data)
-        # mv.occupancy_from_current_pose(data)
-        break
+    dataloader: DALIGenericIterator = get_dataloader(waymo, Mode.val)
+    run_viz(dataloader)
+    # du.velocity_distribution(dataloader, batch_size * 10)
 
 
 if __name__ == "__main__":
