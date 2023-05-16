@@ -345,13 +345,6 @@ class TrafficIA(InputAdapter):
             )
             enc_x = torch.cat([enc_x, onehot[..., 2:-1]], dim=-1)
 
-            # ensure that at least one dummy token isn't masked to prevent NaN's
-            enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
-            if pad_mask is not None:
-                pad_mask = torch.cat(
-                    [pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1
-                )
-
         elif self.class_mode == TrafficIA.ClassMode.SEPARATE:
             assert self.class_names is not None
             assert pad_mask is not None
@@ -368,8 +361,13 @@ class TrafficIA(InputAdapter):
                     [pad_mask_[mask], torch.zeros_like(pad_mask_[mask][:, [0]])],
                     dim=1,
                 )
+            # Return special case with per-class mask
+            return enc_x, pad_mask_
 
-            pad_mask = pad_mask_
+        # ensure that at least one dummy token isn't masked to prevent NaN's
+        enc_x = torch.cat([enc_x, torch.zeros_like(enc_x[:, [0], :])], dim=1)
+        if pad_mask is not None:
+            pad_mask = torch.cat([pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1)
 
         return enc_x, pad_mask
 
