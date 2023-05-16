@@ -73,6 +73,7 @@ class WaymoDatasetConfig(DatasetConfig):
     # How to scale the occupancy roi, whole image => 1, center crop => 0.5
     occupancy_roi: float = 1.0
     flow_mask: bool = False
+    velocity_norm: float = 1.0
 
     @property
     def properties(self) -> Dict[str, Any]:
@@ -299,11 +300,17 @@ def waymo_motion_pipe(
 
     # Transform V{X|Y}
     data_vxvy = stack_keys("velocity_x", "velocity_y")
-    vxvy_tf = (
-        fn.transforms.combine(rot_mat, np.array([[1, 0, 0], [0, -1, 0]], np.float32))
-        if cfg.waymo_eval_frame  # Flip VY if True
-        else rot_mat
-    )
+    vel_tfms = []
+    if cfg.waymo_eval_frame:
+        vel_tfms.append(np.array([[1, 0, 0], [0, -1, 0]], np.float32))
+    if cfg.velocity_norm != 1.0:
+        inv_norm = 1 / cfg.velocity_norm
+        vel_tfms.append(np.array([[inv_norm, 0, 0], [0, inv_norm, 0]], np.float32))
+    if len(vel_tfms) > 0:
+        vxvy_tf = fn.transforms.combine(rot_mat, *vel_tfms)
+    else:
+        vxvy_tf = rot_mat
+
     data_vxvy = fn.coord_transform(fn.reshape(data_vxvy, shape=[-1, 2]), MT=vxvy_tf)
     data_vxvy = fn.reshape(data_vxvy, shape=[128, -1, 2])
 

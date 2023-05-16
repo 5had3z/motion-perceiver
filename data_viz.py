@@ -50,10 +50,11 @@ def main():
         occupancy_roi=0.5,
         only_vehicles=True,
         flow_mask=True,
+        velocity_norm=4.0,
     )
     dataloader: DALIGenericIterator = get_dataloader(waymo, Mode.val)
-    run_viz(dataloader)
-    # du.velocity_distribution(dataloader, batch_size * 10)
+    # run_viz(dataloader)
+    du.velocity_distribution(dataloader, batch_size * 10)
 
 
 if __name__ == "__main__":
