@@ -94,7 +94,7 @@ def write_flow_video(
     """"""
     video_shape = (1600, 800)
     v_writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10, video_shape
+        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10, video_shape
     )
 
     if not v_writer.isOpened():
@@ -174,7 +174,7 @@ def write_occupancy_video(
 
     video_shape = (800, 800)
     v_writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10, video_shape
+        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10, video_shape
     )
 
     if not v_writer.isOpened():
@@ -233,7 +233,7 @@ def write_video_batch(
                     data=sample.cpu().numpy(),
                     pred=pred_cls.sigmoid().cpu().numpy(),
                     roadmap=roadmap,
-                    path=occ_path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.avi",
+                    path=occ_path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.webm",
                     roadmap_scale=roadmap_scale,
                     thresh=threshold,
                 ),
@@ -248,14 +248,14 @@ def write_video_batch(
         for b_idx, (p_flow, p_occ, t_flow) in enumerate(
             zip(pred["flow"], pred["heatmap"], data["flow"])
         ):
-            # Deadlock here for some reason when threadding? Maybe use of torch inside?
+            # Super slow here for some reason when threadding? Maybe use of torch inside?
             # mpool.apply_async(
             write_flow_video(
                 # kwds=dict(
                 pred_flow_sequence=p_flow.cpu().numpy(),
                 pred_occ_sequence=p_occ.sigmoid().cpu().numpy(),
                 truth_flow_sequence=t_flow.cpu().numpy(),
-                path=flow_path / f"flow_{global_it*bz + b_idx}.avi",
+                path=flow_path / f"flow_{global_it*bz + b_idx}.webm",
                 mask_thresh=0.5,
                 # ),
             )
