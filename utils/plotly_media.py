@@ -20,14 +20,23 @@ layout = html.Div(
                 dbc.Col(dcc.Dropdown(id="md-type", options=["occupancy", "flow"])),
             ]
         ),
-        dbc.Row(
-            html.Video(
-                id="md-video",
-                controls=True,
-                height="500px",
-            )
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle(id="md-modal-header")),
+                dbc.ModalBody(
+                    html.Video(
+                        id="md-video",
+                        controls=True,
+                        height="600px",
+                    ),
+                    style={"text-align": "center"},
+                ),
+            ],
+            id="md-modal",
+            is_open=False,
+            size="xl",
         ),
-        html.Div(id="md-thumbnails"),
+        html.Div(id="md-thumbnails", style={"margin-top": "15px"}),
     ]
 )
 
@@ -87,9 +96,11 @@ def update_thumbnails(root_dir: str, experiment: str, media: str):
 
 @callback(
     Output("md-video", "src"),
+    Output("md-modal", "is_open"),
     Input({"type": "vid-thumbnail", "index": ALL}, "n_clicks"),
     Input("md-experiment", "value"),
     Input("content-url", "data"),
+    prevent_initial_call=True,
 )
 def select_video(nclicks, experiment, url):
     if not experiment or len(nclicks) == 0 or ctx.triggered_id is None:
@@ -99,4 +110,4 @@ def select_video(nclicks, experiment, url):
     vidpath = next(exp.root.glob(f"**/{ctx.triggered_id['index']}.webm"))
     relpath = Path(exp.root.stem) / vidpath.relative_to(exp.root)
     print(relpath)
-    return f"{url}/{relpath}"
+    return f"{url}/{relpath}", True
