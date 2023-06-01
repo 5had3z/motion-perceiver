@@ -82,7 +82,7 @@ def add_thumbnail_to_grid(grid: List[dbc.Col], video_path: Path, n_col: int = 3)
     Input("md-type", "value"),
 )
 def update_thumbnails(root_dir: str, experiment: str, media: str):
-    """TODO make this more adaptable to the width of the window"""
+    """"""
     if not all([experiment, root_dir, media]):
         raise PreventUpdate
 

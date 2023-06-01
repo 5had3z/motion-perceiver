@@ -23,5 +23,5 @@ if __name__ == "__main__":
         shell=True,
     )
 
-    app.run(debug=True)
+    app.run()
     proc.terminate()

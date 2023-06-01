@@ -1048,13 +1048,13 @@ class MotionPerceiver(nn.Module):
 
         # from matplotlib import pyplot as plt
 
-        # for bidx in range(0, 5):
-        #     Path.mkdir(Path.cwd() / str(bidx), exist_ok=True)
+        # for bidx in range(0, 9):
+        #     Path.mkdir(Path.cwd() / "latent" / str(bidx), exist_ok=True, parents=True)
         #     for idx, latent in enumerate(x_latents):
         #         plt.figure(figsize=(16, 10))
         #         plt.imshow(latent[bidx].cpu().numpy())
         #         plt.tight_layout()
-        #         plt.savefig(f"{bidx}/{idx}_latent.png")
+        #         plt.savefig(f"latent/{bidx}/{bidx}_{idx}_latent.png")
         #         plt.close()
 
         # Path.mkdir(Path.cwd() / "diff", exist_ok=True)

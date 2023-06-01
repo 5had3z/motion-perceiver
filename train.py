@@ -66,7 +66,9 @@ class Trainer(PyTorchTrainer):
 
 def setup(cli_args: NS) -> Trainer:
     exp_config = cli_init_config(cli_args)
-    trainer_config = PyTorchTrainerConfig(loss_monitor=AsyncFiniteMonitor())
+    trainer_config = PyTorchTrainerConfig(
+        loss_monitor=AsyncFiniteMonitor(), amp=cli_args.amp
+    )
     if cli_args.pbar:
         trainer_config.pbar = pbar_wrapper
 
@@ -95,13 +97,14 @@ def run(trainer: Trainer, epochs: int) -> None:
 def main() -> None:
     cli_parser = get_training_parser()
     cli_parser.add_argument("--pbar", action="store_true")
+    cli_parser.add_argument("--amp", action="store_true")
     cli_args = cli_parser.parse_args()
+    torch.set_float32_matmul_precision("medium" if cli_args.amp else "high")
     trainer = setup(cli_args)
     run(trainer, cli_args.epochs)
 
 
 if __name__ == "__main__":
-    torch.set_float32_matmul_precision("high")
     logging.basicConfig(
         format="%(asctime)s-%(processName)s-%(levelname)s-%(name)s: %(message)s",
         level=logging.INFO,

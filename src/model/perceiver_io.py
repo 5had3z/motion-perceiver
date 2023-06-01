@@ -311,6 +311,7 @@ class PerceiverDecoder(nn.Module):
         position_encoding_type: str = "learnable",
         num_frequency_bands: int | None = None,
         max_frequency: float | None = None,
+        linear_position_mixing: bool = False,
     ):
         """
         :param output_adapter: Transforms generic decoder output of shape (B, K, C_output)
@@ -351,6 +352,8 @@ class PerceiverDecoder(nn.Module):
                 None if max_frequency is None else [max_frequency] * 2,
                 include_positions=False,
             )
+            if linear_position_mixing:
+                enc = self._linear_position_mixing(enc)
             # flatten encodings along spatial dimensions
             enc = einops.rearrange(enc, "... c -> (...) c")
             self.register_buffer("output", enc, persistent=False)
@@ -370,6 +373,18 @@ class PerceiverDecoder(nn.Module):
     def _init_parameters(self):
         if self._position_encoding_type == "learnable":
             self.output.normal_(0.0, 0.02).clamp_(-2.0, 2.0)
+
+    @staticmethod
+    def _linear_position_mixing(enc: Tensor) -> Tensor:
+        """Add x+y and x-y features to position encoding"""
+        stride = enc.shape[-1] // 4
+        xdata = torch.cat(
+            [enc[..., :stride], enc[..., 2 * stride : 3 * stride]], dim=-1
+        )
+        ydata = torch.cat(
+            [enc[..., stride : 2 * stride], enc[..., 3 * stride :]], dim=-1
+        )
+        return torch.cat([enc, xdata + ydata], dim=-1)
 
     def onnx_export(self, path: Path) -> None:
         """Export modules as onnx files"""

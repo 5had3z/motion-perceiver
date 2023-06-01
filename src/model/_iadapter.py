@@ -58,10 +58,10 @@ def _generate_position_encodings(
         torch.linspace(1.0, max_freq / 2.0, num_frequency_bands, device=p.device)
         for max_freq in max_frequencies
     ]
-    frequency_grids = []
 
+    frequency_grids = []
     for i, frequencies_i in enumerate(frequencies):
-        frequency_grids.append(p[..., i : i + 1] * frequencies_i[None, ...])
+        frequency_grids.append(p[..., [i]] * frequencies_i[None, ...])
 
     if include_positions:
         encodings.append(p)
