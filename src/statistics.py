@@ -134,7 +134,7 @@ class Occupancy(Statistic):
 
         dtp = confusion.tp[:-1] - confusion.tp[1:]
         p = confusion.tp + confusion.fp
-        dp = p[:-1] + p[1:]
+        dp = p[:-1] - p[1:]
         prec_slope = _div_no_nan(dtp, torch.maximum(dp, zero_))
         intercept = confusion.tp[1:] - prec_slope * p[1:]
 

@@ -311,6 +311,9 @@ def _get_validation_and_prediction(
 def evaluate_methods(
     id_path: Path, pred_path: Path, split: str, visualize: bool = False
 ):
+    dev = tf.config.list_physical_devices("GPU")
+    tf.config.experimental.set_memory_growth(dev[0], True)
+
     task_config = get_waymo_task_config()
     data_shards = (
         Path(os.environ.get("DATAPATH", "/data"))
