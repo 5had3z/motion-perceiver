@@ -1,15 +1,42 @@
 """ 
 General AP Statistics for Occupancy Heatmap
 """
+from dataclasses import dataclass
 from pathlib import Path
 from itertools import product
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy import integrate
+import torch
 from torch import Tensor
 from torch.nn.functional import l1_loss, mse_loss
 from konductor.metadata.statistics import Statistic, STATISTICS_REGISTRY
+
+
+@dataclass
+class Confusion:
+    """Batch-Last Confusion Array Shape: (thresh, batchidx)"""
+
+    @classmethod
+    def preallocate(cls, batch: int, thresholds: int, device=None):
+        data = torch.empty((thresholds, batch), dtype=torch.float32, device=device)
+        return cls(data, data.clone(), data.clone(), data.clone())
+
+    tp: Tensor
+    fp: Tensor
+    tn: Tensor
+    fn: Tensor
+
+    @property
+    def device(self):
+        return self.tp.device
+
+
+def _div_no_nan(a: Tensor, b: Tensor) -> Tensor:
+    """Divide and set nan/inf values to zero"""
+    c = a / b
+    c[~torch.isfinite(c)] = 0
+    return c
 
 
 @STATISTICS_REGISTRY.register_module("occupancy")
@@ -28,6 +55,7 @@ class Occupancy(Statistic):
             time_idxs.update(set(kwargs["heatmap_time"]))
 
         return cls(
+            auc_threholds=kwargs.get("auc_thresholds", 100),
             time_idxs=sorted(list(time_idxs)) if len(time_idxs) > 0 else None,
             classes=kwargs.get("classes", None),
             buffer_length=buffer_length,
@@ -37,11 +65,13 @@ class Occupancy(Statistic):
 
     def __init__(
         self,
+        auc_thresholds: int = 100,
         time_idxs: List[int] | None = None,
         classes: List[str] | None = None,
         **kwargs,
     ):
         super().__init__(logger_name="OccupancyEval", **kwargs)
+        self.auc_thresholds = auc_thresholds
         self.time_idxs = time_idxs
         self.classes = classes
 
@@ -65,10 +95,7 @@ class Occupancy(Statistic):
         soft_iou = (soft_intersection / soft_union).cpu().numpy()
         return soft_iou
 
-    def calculate_auc(self, pred: Tensor, target: Tensor) -> np.ndarray:
-        """Calculate heatmap auc"""
-        target_binary = target.bool()
-
+    def make_thresholds(self) -> np.ndarray:
         # ensure 0,0 -> 1,1 with 1 and 0 thresholds
         # thresholds = np.concatenate(
         #     [
@@ -77,32 +104,58 @@ class Occupancy(Statistic):
         #         np.linspace(0.20, 0, 21),
         #     ]
         # )
-        thresholds = np.linspace(1, 0, 100)  # Parity with Waymo
-        tpr = np.empty((len(thresholds), target.shape[0]))
-        fpr = np.empty((len(thresholds), target.shape[0]))
+
+        thresh = np.linspace(0, 1, self.auc_thresholds, dtype=np.float32)
+
+        # Go beyond 0,1 to capture float rounding issues
+        thresh[0] = -np.finfo(thresh.dtype).eps
+        thresh[-1] = 1 + np.finfo(thresh.dtype).eps
+        return thresh
+
+    def calculate_confusion(self, pred: Tensor, target: Tensor) -> Confusion:
+        """"""
+        target_binary = target.bool()
+        thresholds = self.make_thresholds()
+        conf = Confusion.preallocate(pred.shape[0], thresholds.shape[0], pred.device)
+
+        # Thresholds should ordered 0 -> 1
         for idx, threshold in enumerate(thresholds):
-            pred_binary = pred > threshold
+            pred_binary: Tensor = pred > threshold
+            conf.fn[idx] = (~pred_binary & target_binary).sum(dim=(1, 2))
+            conf.tp[idx] = (pred_binary & target_binary).sum(dim=(1, 2))
+            conf.fp[idx] = (pred_binary & ~target_binary).sum(dim=(1, 2))
+            conf.tn[idx] = (~pred_binary & ~target_binary).sum(dim=(1, 2))
 
-            fn = (~pred_binary & target_binary).sum(dim=(1, 2))
-            tp = (pred_binary & target_binary).sum(dim=(1, 2))
-            tpr[idx] = (tp / (tp + fn)).cpu().numpy()
+        return conf
 
-            fp = (pred_binary & ~target_binary).sum(dim=(1, 2))
-            tn = (~pred_binary & ~target_binary).sum(dim=(1, 2))
-            fpr[idx] = (fp / (tn + fp)).cpu().numpy()
+    def interpolate_pr_auc(self, confusion: Confusion) -> np.ndarray:
+        """From Keras PR AUC Interpolation"""
+        zero_ = torch.tensor(0, device=confusion.device)
 
-        # transpose to batch first
-        tpr = tpr.transpose(1, 0)
-        fpr = fpr.transpose(1, 0)
+        dtp = confusion.tp[:-1] - confusion.tp[1:]
+        p = confusion.tp + confusion.fp
+        dp = p[:-1] + p[1:]
+        prec_slope = _div_no_nan(dtp, torch.maximum(dp, zero_))
+        intercept = confusion.tp[1:] - prec_slope * p[1:]
 
-        # handle nans by setting to 1, if there is no tp in gt then tpr has to be 1
-        tpr[np.isnan(tpr)] = 1
+        safe_p_ratio = torch.where(
+            torch.logical_and(p[:-1] > 0, p[1:] > 0),
+            _div_no_nan(p[:-1], torch.maximum(p[1:], zero_)),
+            torch.ones_like(p[1:]),
+        )
 
-        batch_auc = np.empty((target.shape[0]))
-        for b_idx, b_tpr, b_fpr in zip(range(target.shape[0]), tpr, fpr):
-            batch_auc[b_idx] = integrate.cumulative_trapezoid(b_tpr, b_fpr)[-1]
+        pr_auc_increment = _div_no_nan(
+            prec_slope * (dtp + intercept * torch.log(safe_p_ratio)),
+            torch.maximum(confusion.tp[1:] + confusion.fn[1:], zero_),
+        )
 
-        return batch_auc
+        return pr_auc_increment.sum(dim=0).cpu().numpy()
+
+    def calculate_auc(self, pred: Tensor, target: Tensor) -> np.ndarray:
+        """Calculate heatmap auc"""
+        conf = self.calculate_confusion(pred, target)
+        auc = self.interpolate_pr_auc(conf)
+        return auc
 
     def run_over_timesteps(
         self, prediction: Tensor, target: Tensor, timesteps: Tensor, classname: str = ""
