@@ -161,6 +161,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+.git
 .vscode
 checkpoints 
 src/dataset/plugins/build
