@@ -1,8 +1,7 @@
 from pathlib import Path
 import subprocess
 from copy import deepcopy
-from dataclasses import dataclass, field
-from typing import List, Sequence, Optional, Tuple
+from typing import List, Set, Optional, Tuple
 import os
 import zlib
 
@@ -21,6 +20,8 @@ from waymo_open_dataset.protos.occupancy_flow_metrics_pb2 import (
     OccupancyFlowTaskConfig,
     OccupancyFlowMetrics,
 )
+
+from .eval_data import MetricData
 
 
 def get_waymo_task_config():
@@ -168,30 +169,6 @@ def export_evaluation(pred_path: Path):
     subprocess.run(["tar", "czvf", str(tar_path), str(binary_path)])
 
 
-@dataclass
-class EvalStatistics:
-    name: str
-    _iou: List[float] = field(default_factory=list)
-    _auc: List[float] = field(default_factory=list)
-
-    def add_iou(self, iou: float) -> None:
-        self._iou.append(iou)
-
-    def add_auc(self, auc: float) -> None:
-        self._auc.append(auc)
-
-    @property
-    def auc(self) -> float:
-        return np.array(self._auc).mean()
-
-    @property
-    def iou(self) -> float:
-        return np.array(self._iou).mean()
-
-    def __str__(self) -> str:
-        return f"{self.name} - IoU: {self.iou:.3f}, AUC: {self.auc:.3f}"
-
-
 def write_images(
     true_waypoints: List[tf.Tensor],
     pred_waypoints: List[tf.Tensor],
@@ -229,22 +206,23 @@ def write_images(
 
 
 def _get_validation_and_prediction(
-    test_dataset: tf.data.Dataset,
-    test_scenario_ids: Sequence[str],
+    dataset: tf.data.Dataset,
+    scenario_ids: Set[str],
     inference_blob_folder: Path,
     config: OccupancyFlowTaskConfig,
     split: str,
     visualize: bool = False,
-) -> Tuple[EvalStatistics, EvalStatistics]:
+) -> Tuple[MetricData, MetricData]:
     """Iterate over all test examples in one shard and generate predictions."""
-    pt_stats = EvalStatistics("pytorch")
-    tf_stats = EvalStatistics("tensorflow")
+    pt_stats = MetricData("pytorch")
+    tf_stats = MetricData("tensorflow")
 
-    with tqdm(total=len(test_scenario_ids)) as pbar:
-        for inputs in test_dataset:
+    with tqdm(total=len(scenario_ids)) as pbar:
+        for inputs in dataset:
             scenario_id = inputs["scenario/id"].numpy().astype(str)[0]
-            if scenario_id not in test_scenario_ids:
+            if scenario_id not in scenario_ids:
                 continue
+
             pytorch_gt_file = (
                 inference_blob_folder.parent.parent
                 / f"{split}_ground_truth"
@@ -312,7 +290,8 @@ def evaluate_methods(
     id_path: Path, pred_path: Path, split: str, visualize: bool = False
 ):
     dev = tf.config.list_physical_devices("GPU")
-    tf.config.experimental.set_memory_growth(dev[0], True)
+    if len(dev) > 0:
+        tf.config.experimental.set_memory_growth(dev[0], True)
 
     task_config = get_waymo_task_config()
     data_shards = (
@@ -322,16 +301,18 @@ def evaluate_methods(
     )
 
     filenames = tf.io.matching_files(str(data_shards))
-    dataset = tf.data.TFRecordDataset(filenames)
-    dataset = dataset.map(occupancy_flow_data.parse_tf_example)
-    dataset = dataset.batch(1)
+    dataset = (
+        tf.data.TFRecordDataset(filenames)
+        .map(occupancy_flow_data.parse_tf_example)
+        .batch(1)
+    )
 
     with tf.io.gfile.GFile(id_path) as f:
-        test_scenario_ids = f.readlines()
-        test_scenario_ids = [id.rstrip() for id in test_scenario_ids]
+        scenario_ids = f.readlines()
+        scenario_ids = set(id.rstrip() for id in scenario_ids)
 
     pt_stats, tf_stats = _get_validation_and_prediction(
-        dataset, test_scenario_ids, pred_path, task_config, split, visualize
+        dataset, scenario_ids, pred_path, task_config, split, visualize
     )
 
     return pt_stats, tf_stats

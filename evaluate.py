@@ -347,14 +347,6 @@ def statistic_evaluation(
     # save now as it'll be lost after jit
     input_indicies = list(model.encoder.input_indicies)
 
-    # fmt: off
-    arg_order = [
-        "time_idx", "agents", "agents_valid",
-        "roadgraph", "roadgraph_valid", "roadmap",
-        "signals", "signals_valid",
-    ]
-    # fmt: on
-
     if config.filter_ids is not None:
         loader = yield_filtered_batch(loader, config.filter_ids, config.batch_size)
 

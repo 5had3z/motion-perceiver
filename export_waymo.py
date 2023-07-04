@@ -5,9 +5,13 @@ from argparse import Namespace
 import enum
 from pathlib import Path
 import os
+from contextlib import closing
 
 
 import typer
+from konductor.utilities.metadata import Metadata
+
+from utils.eval_data import update_eval_db, get_db
 
 
 class Mode(str, enum.Enum):
@@ -74,7 +78,17 @@ def evaluate(
     from utils.export_tf import evaluate_methods
 
     pred_path = workspace / run_hash / f"{split}_blobs"
-    evaluate_methods(get_id_path(split.name), pred_path, split.name, visualize)
+    split_ = {"test": "testing", "val": "validation"}[split.name]
+    pt_eval, tf_eval = evaluate_methods(
+        get_id_path(split.name), pred_path, split_, visualize
+    )
+    meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
+
+    with closing(get_db(workspace / "waymo_eval.db")) as con:
+        cur = con.cursor()
+        update_eval_db(cur, run_hash, meta.epoch, pt_eval)
+        update_eval_db(cur, run_hash, meta.epoch, tf_eval)
+        con.commit()
 
 
 @app.command()
