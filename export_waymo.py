@@ -9,9 +9,8 @@ from contextlib import closing
 
 
 import typer
-from konductor.utilities.metadata import Metadata
 
-from utils.eval_data import update_eval_db, get_db
+from utils.eval_data import upsert_eval, get_db, upsert_metadata, Metadata
 
 
 class Mode(str, enum.Enum):
@@ -82,12 +81,31 @@ def evaluate(
     pt_eval, tf_eval = evaluate_methods(
         get_id_path(split.name), pred_path, split_, visualize
     )
+
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
+    with closing(get_db(workspace / "waymo_eval.db")) as con:
+        cur = con.cursor()
+        upsert_eval(cur, run_hash, meta.epoch, pt_eval)
+        upsert_eval(cur, run_hash, meta.epoch, tf_eval)
+        con.commit()
+
+
+@app.command()
+def update_metadata(workspace: Path):
+    """Apply updates to the metadata table in the eval database"""
+
+    def iterate_metadata():
+        """Iterate over metadata files in workspace"""
+        for run in workspace.iterdir():
+            metapath = run / "metadata.yaml"
+            if metapath.exists():
+                yield metapath
 
     with closing(get_db(workspace / "waymo_eval.db")) as con:
         cur = con.cursor()
-        update_eval_db(cur, run_hash, meta.epoch, pt_eval)
-        update_eval_db(cur, run_hash, meta.epoch, tf_eval)
+        for metaf in iterate_metadata():
+            meta = Metadata.from_yaml(metaf)
+            upsert_metadata(cur, str(metaf.parent.name), meta)
         con.commit()
 
 

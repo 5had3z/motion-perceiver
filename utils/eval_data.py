@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 import numpy as np
+from konductor.utilities.metadata import Metadata
 
 
 @dataclass
@@ -31,21 +32,35 @@ class MetricData:
 
 
 def get_db(path: Path):
+    """Return handle to db, adds base tables if it didn't previously exist"""
     create_table = not path.exists()
     con = sqlite3.connect(path)
 
     if create_table:
+        con.execute(
+            "CREATE TABLE metadata (hash TEXT PRIMARY KEY, ts TIMESTAMP, desc TEXT, epoch INT)"
+        )
         for table in ["pytorch", "tensorflow"]:
             con.execute(
-                f"CREATE TABLE {table} (hash TEXT PRIMARY KEY, epoch INT, iou REAL, auc REAL)",
+                f"CREATE TABLE {table} (hash TEXT PRIMARY KEY, epoch INT, iou FLOAT, auc FLOAT)",
             )
         con.commit()
 
     return con
 
 
-def update_eval_db(cur: sqlite3.Cursor, run_hash: str, epoch: int, data: MetricData):
-    """Updates existing entry for experiment or creates new one if doesn't exist i.e. UPSERT"""
+def upsert_metadata(cur: sqlite3.Cursor, run_hash: str, metadata: Metadata):
+    """Upsert operation on experiment metadata table"""
+    cur.execute(
+        f"INSERT INTO metadata (hash, ts, desc, epoch) "
+        "VALUES (?, ?, ?, ?) ON CONFLICT (hash) DO UPDATE "
+        "SET ts=excluded.ts, desc=excluded.desc, epoch=excluded.epoch;",
+        [run_hash, metadata.train_last, metadata.brief, metadata.epoch],
+    )
+
+
+def upsert_eval(cur: sqlite3.Cursor, run_hash: str, epoch: int, data: MetricData):
+    """Upsert experiment iou/auc performance"""
     cur.execute(
         f"INSERT INTO {data.name} (hash, epoch, iou, auc) "
         "VALUES (?, ?, ?, ?) ON CONFLICT (hash) DO UPDATE "

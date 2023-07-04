@@ -303,13 +303,13 @@ def evaluate_methods(
     filenames = tf.io.matching_files(str(data_shards))
     dataset = (
         tf.data.TFRecordDataset(filenames)
-        .map(occupancy_flow_data.parse_tf_example)
+        .map(occupancy_flow_data.parse_tf_example, num_parallel_calls=4)
+        .prefetch(4)
         .batch(1)
     )
 
     with tf.io.gfile.GFile(id_path) as f:
-        scenario_ids = f.readlines()
-        scenario_ids = set(id.rstrip() for id in scenario_ids)
+        scenario_ids = set(id.rstrip() for id in f.readlines())
 
     pt_stats, tf_stats = _get_validation_and_prediction(
         dataset, scenario_ids, pred_path, task_config, split, visualize
