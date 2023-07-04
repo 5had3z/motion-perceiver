@@ -117,6 +117,7 @@ def waymo_motion_pipe(
     num_shards: int,
     random_shuffle: bool,
     cfg: WaymoDatasetConfig,
+    augmentations: Dict[str, Any],
 ):
     """Waymo data should be split in separate folders
     training/validation/testing. Therefore we should be able
