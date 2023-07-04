@@ -3,6 +3,7 @@ from typing import List
 import sqlite3
 from pathlib import Path
 
+import pandas as pd
 import numpy as np
 from konductor.utilities.metadata import Metadata
 
@@ -67,3 +68,15 @@ def upsert_eval(cur: sqlite3.Cursor, run_hash: str, epoch: int, data: MetricData
         "SET epoch=excluded.epoch, iou=excluded.iou, auc=excluded.auc;",
         [run_hash, epoch, data.iou, data.auc],
     )
+
+
+def find_outdated_runs(workspace: Path) -> List[str]:
+    con = sqlite3.connect(workspace / "waymo_eval.db")
+    meta = pd.read_sql_query("SELECT epoch, hash FROM metadata", con, index_col="hash")
+    perf = pd.read_sql_query("SELECT epoch, hash FROM pytorch", con, index_col="hash")
+    con.close()
+
+    missing = meta.index.difference(perf.index).to_list()
+    outdated = meta.gt(perf).query("epoch").index.to_list()
+
+    return missing + outdated

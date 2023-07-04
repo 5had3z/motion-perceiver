@@ -2,15 +2,22 @@
 to then import to waymo"""
 
 from argparse import Namespace
+from contextlib import closing
 import enum
 from pathlib import Path
 import os
-from contextlib import closing
+import time
 
 
 import typer
 
-from utils.eval_data import upsert_eval, get_db, upsert_metadata, Metadata
+from utils.eval_data import (
+    upsert_eval,
+    get_db,
+    upsert_metadata,
+    Metadata,
+    find_outdated_runs,
+)
 
 
 class Mode(str, enum.Enum):
@@ -117,6 +124,28 @@ def export(workspace: Path, run_hash: str, split: Mode):
     from utils.export_tf import export_evaluation
 
     export_evaluation(workspace / run_hash / f"{split.name}_blobs")
+
+
+@app.command()
+def auto_evaluate(workspace: Path):
+    """
+    Automatically perform val evaluation over experiments.
+    Metadata is first recreated so we can determine what experiments are "out of date" or are
+    missing entries.
+    If "out of date" or missing an entry then we can run waymo evaluation on that experiment.
+    """
+    update_metadata(workspace)
+    need_updating = find_outdated_runs(workspace)
+    print(f"{len(need_updating)} experiments to update: {need_updating}")
+
+    stime = time.perf_counter()
+    for idx, run_hash in enumerate(need_updating):
+        generate(workspace, run_hash, Mode.val)
+        evaluate(workspace, run_hash, Mode.val)
+        print(
+            f"Updated {idx}/{len(need_updating)} Experiments"
+            f", elapsed {time.perf_counter()-stime}s"
+        )
 
 
 if __name__ == "__main__":
