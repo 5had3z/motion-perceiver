@@ -1,6 +1,7 @@
 #include "maskedops.hpp"
 
 #include <algorithm>
+#include <execution>
 #include <functional>
 #include <limits>
 #include <utility>
@@ -13,11 +14,14 @@
 namespace maskedop
 {
 
-[[nodiscard]] std::size_t nElemSampleView(::dali::ConstSampleView<::dali::CPUBackend> tensor)
+using ConstTensor = dali::ConstSampleView<dali::CPUBackend>;
+using Tensor = dali::SampleView<dali::CPUBackend>;
+
+[[nodiscard]] int64_t nElemSampleView(ConstTensor tensor)
 {
     const auto tensorShape = tensor.shape();
     // Product of all the dimensions is the full size of the tensor
-    return std::accumulate(tensorShape.begin(), tensorShape.end(), 1, std::multiplies<int>());
+    return std::reduce(std::execution::unseq, tensorShape.begin(), tensorShape.end(), 1LL, std::multiplies<int64_t>());
 }
 
 /**
@@ -25,15 +29,14 @@ namespace maskedop
  *        Once that is added to the standard, I can do something like zip | filter | minmax_element
  *        The mask value is true if the input is valid.
  */
-std::pair<float, float> findMinMax(
-    ::dali::ConstSampleView<::dali::CPUBackend> inputTensor, ::dali::ConstSampleView<::dali::CPUBackend> maskTensor)
+std::pair<float, float> findMinMax(ConstTensor inputTensor, ConstTensor maskTensor)
 {
     auto minMax = std::make_pair(std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest());
 
     const auto maxElem = nElemSampleView(inputTensor);
     assert(maxElem == nElemSampleView(maskTensor) && "input and mask have different element counts");
 
-    for (std::size_t cIdx = 0; cIdx < maxElem; cIdx++)
+    for (int64_t cIdx = 0; cIdx < maxElem; cIdx++)
     {
         if (maskTensor.data<int>()[cIdx])
         {
@@ -55,9 +58,7 @@ std::pair<float, float> findMinMax(
     return minMax;
 }
 
-void normalize(::dali::ConstSampleView<::dali::CPUBackend> inputTensor,
-    ::dali::ConstSampleView<::dali::CPUBackend> maskTensor, ::dali::SampleView<::dali::CPUBackend> outputTensor,
-    const float normalize)
+void normalize(ConstTensor inputTensor, ConstTensor maskTensor, Tensor outputTensor, const float normalize)
 {
     // Find min max of the sequence
     const auto [min, max] = findMinMax(inputTensor, maskTensor);
@@ -68,7 +69,7 @@ void normalize(::dali::ConstSampleView<::dali::CPUBackend> inputTensor,
     const auto maxElem = nElemSampleView(inputTensor);
 
     // Can maybe use std::span and generic algorithm for this
-    for (std::size_t cIdx = 0; cIdx < maxElem; cIdx++)
+    for (int64_t cIdx = 0; cIdx < maxElem; cIdx++)
     {
         // Subtract the center of the map and divide by normalization factor
         outputTensor.mutable_data<float>()[cIdx] = (inputTensor.data<float>()[cIdx] - center) / normalize;
@@ -87,14 +88,13 @@ void Normalize<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
 
     for (int sampleId = 0; sampleId < inShape.num_samples(); sampleId++)
     {
-        tPool.AddWork([&, sampleId](int thread_id)
-            { normalize(input[sampleId], mask[sampleId], output[sampleId], mNormalizeScalar); });
+        tPool.AddWork(
+            [&, sampleId](int) { normalize(input[sampleId], mask[sampleId], output[sampleId], mNormalizeScalar); });
     }
     tPool.RunAll();
 }
 
-void median(::dali::ConstSampleView<::dali::CPUBackend> inputTensor,
-    ::dali::ConstSampleView<::dali::CPUBackend> maskTensor, ::dali::SampleView<::dali::CPUBackend> outputTensor)
+void median(ConstTensor inputTensor, ConstTensor maskTensor, Tensor outputTensor)
 {
     const auto [min, max] = findMinMax(inputTensor, maskTensor);
 
