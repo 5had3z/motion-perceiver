@@ -1,67 +1,91 @@
 """Export pytorch predictions to numpy file
 to then import to waymo"""
 
-from argparse import ArgumentParser
+from argparse import Namespace
+import enum
 from pathlib import Path
 import os
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument("-s", "--workspace", type=Path)
-    parser.add_argument("-x", "--run_hash", type=str)
-    parser.add_argument("-c", "--config_file", type=Path)
-    parser.add_argument("--remote", help="DO NOT USE")
-    parser.add_argument("--split", type=str, choices=["test", "val"])
+import typer
 
-    subparsers = parser.add_subparsers(dest="command")
-    infer = subparsers.add_parser("generate", help="Run pytorch inference")
-    infer.add_argument("-w", "--workers", type=int, default=4)
-    infer.add_argument("--batch_size", type=int, default=16)
 
-    evaluate = subparsers.add_parser(
-        "evaluate", help="Run comparison between pytorch and waymo eval"
-    )
-    evaluate.add_argument("--visualize", action="store_true")
+class Mode(str, enum.Enum):
+    train = "train"
+    val = "val"
+    test = "test"
 
-    export = subparsers.add_parser("export", help="Export to waymo evaluation server")
 
-    args = parser.parse_args()
+app = typer.Typer()
 
-    split = {"test": "testing", "val": "validation"}[args.split]  # Expand string
-    gt_path = args.workspace / f"{split}_ground_truth"
-    pred_path = args.workspace / args.run_hash / f"{split}_blobs"
-    id_path = (
+
+def get_id_path(split: str):
+    ext_split = {"test": "testing", "val": "validation"}[split]
+    return (
         Path(os.environ.get("DATAPATH", "/data"))
-        / f"challenge_{split}_scenario_ids.txt"
+        / f"challenge_{ext_split}_scenario_ids.txt"
     )
-    with open(id_path, "r", encoding="utf-8") as f:
+
+
+@app.command()
+def generate(
+    workspace: Path, run_hash: str, split: Mode, workers: int = 4, batch_size: int = 16
+):
+    """
+    Export pytorch predictions to folder of numpy files
+    """
+    from konductor.trainer.init import cli_init_config
+    from utils.export_torch import initialize, run_export
+
+    cli_args = Namespace(
+        workspace=workspace,
+        run_hash=run_hash,
+        split=split,
+        workers=workers,
+        batch_size=batch_size,
+        config_file=None,
+    )
+
+    exp_cfg = cli_init_config(cli_args)
+
+    with get_id_path(split.name).open("r", encoding="utf-8") as f:
         scenario_ids = set([l.strip() for l in f.readlines()])
 
-    if not gt_path.exists():
-        gt_path.mkdir()
+    model, dataloader = initialize(exp_cfg, cli_args)
+    pred_path = workspace / run_hash / f"{split.name}_blobs"
+    gt_path = workspace / f"{split.name}_ground_truth"
 
-    if not pred_path.exists():
-        pred_path.mkdir()
+    pred_path.mkdir(exist_ok=True)
+    gt_path.mkdir(exist_ok=True)
 
-    if args.command == "generate":
-        from konductor.trainer.init import cli_init_config
-        from utils.export_torch import initialize, run_export
+    run_export(model, dataloader, scenario_ids, pred_path, gt_path, batch_size)
 
-        exp_cfg = cli_init_config(args)
-        model, dataloader = initialize(exp_cfg, args)
-        run_export(model, dataloader, scenario_ids, pred_path, gt_path, args)
 
-    elif args.command == "evaluate":
-        from utils.export_tf import evaluate_methods
+@app.command()
+def evaluate(
+    workspace: Path,
+    run_hash: str,
+    split: Mode,
+    visualize: bool = False,
+):
+    """
+    Use waymo evaluation code for calculating IOU/AUC requires exported pytorch predictions
+    """
+    from utils.export_tf import evaluate_methods
 
-        evaluate_methods(id_path, pred_path, split, args.visualize)
+    pred_path = workspace / run_hash / f"{split}_blobs"
+    evaluate_methods(get_id_path(split.name), pred_path, split.name, visualize)
 
-    elif args.command == "export":
-        from utils.export_tf import export_evaluation
 
-        export_evaluation(pred_path)
+@app.command()
+def export(workspace: Path, run_hash: str, split: Mode):
+    """
+    Export predictions
+    """
+    from utils.export_tf import export_evaluation
+
+    export_evaluation(workspace / run_hash / f"{split.name}_blobs")
 
 
 if __name__ == "__main__":
-    main()
+    app()

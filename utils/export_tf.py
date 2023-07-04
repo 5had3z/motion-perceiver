@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import List, Sequence, Optional
+from typing import List, Sequence, Optional, Tuple
 import os
 import zlib
 
@@ -235,7 +235,7 @@ def _get_validation_and_prediction(
     config: OccupancyFlowTaskConfig,
     split: str,
     visualize: bool = False,
-) -> None:
+) -> Tuple[EvalStatistics, EvalStatistics]:
     """Iterate over all test examples in one shard and generate predictions."""
     pt_stats = EvalStatistics("pytorch")
     tf_stats = EvalStatistics("tensorflow")
@@ -305,7 +305,7 @@ def _get_validation_and_prediction(
             if pbar.n % 10 == 0:
                 pbar.set_description(f"{pt_stats} - {tf_stats}")
 
-    print(f"{pt_stats}\n{tf_stats}")
+    return pt_stats, tf_stats
 
 
 def evaluate_methods(
@@ -330,6 +330,8 @@ def evaluate_methods(
         test_scenario_ids = f.readlines()
         test_scenario_ids = [id.rstrip() for id in test_scenario_ids]
 
-    _get_validation_and_prediction(
+    pt_stats, tf_stats = _get_validation_and_prediction(
         dataset, test_scenario_ids, pred_path, task_config, split, visualize
     )
+
+    return pt_stats, tf_stats

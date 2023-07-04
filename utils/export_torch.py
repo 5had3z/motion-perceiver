@@ -54,12 +54,12 @@ def run_export(
     scenario_ids: Set[str],
     pred_path: Path,
     gt_path: Path,
-    args,
+    batch_size: int,
 ):
     """Run inference on scenario ids and write
     predictions to pred_path and the ground truth to gt_path"""
     with ProgressBar(total=len(scenario_ids), desc="Exporting") as pbar:
-        for batch in yield_filtered_batch(dataloader, scenario_ids, args.batch_size):
+        for batch in yield_filtered_batch(dataloader, scenario_ids, batch_size):
             pbar.update(inference(model, batch[0], pred_path, gt_path))
 
 
