@@ -1,6 +1,7 @@
 FROM ubuntu:22.04 AS opencv-build
 WORKDIR /opt/opencv
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip
+RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.7.0.zip && \
     unzip opencv.zip && \
     cmake -B build -S opencv-4.7.0 -DBUILD_LIST=imgproc
@@ -10,11 +11,10 @@ FROM WITHHELD/konductor:pytorch-main
 
 # Install opencv 4.5 for DALI, only install imgproc
 USER root
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y make
 COPY --from=opencv-build /opt/opencv /opt/opencv
 RUN cd /opt/opencv/build && make install && cd /root && rm -r /opt/opencv
 
-USER worker
 RUN pip3 install \
     opencv-python-headless \
     einops==0.6.0 \
@@ -29,5 +29,4 @@ ENV COMMIT_SHA=${COMMIT}
 COPY --chown=worker:worker . /home/worker
 WORKDIR /home/worker
 RUN cd src/dataset/plugins && sh makeplugins.sh
-
-ENTRYPOINT [ "torchrun" ]
+USER worker

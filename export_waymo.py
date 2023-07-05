@@ -140,12 +140,16 @@ def auto_evaluate(workspace: Path):
 
     stime = time.perf_counter()
     for idx, run_hash in enumerate(need_updating):
-        generate(workspace, run_hash, Mode.val)
-        evaluate(workspace, run_hash, Mode.val)
-        print(
-            f"Updated {idx}/{len(need_updating)} Experiments"
-            f", elapsed {time.perf_counter()-stime}s"
-        )
+        try:
+            print(f"Running {run_hash}")
+            generate(workspace, run_hash, Mode.val)
+            evaluate(workspace, run_hash, Mode.val)
+            print(
+                f"Updated {idx}/{len(need_updating)} Experiments"
+                f", elapsed {time.perf_counter()-stime}s"
+            )
+        except Exception as err:
+            print(f"Skpping {run_hash} with error: {err}")
 
 
 if __name__ == "__main__":
