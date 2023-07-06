@@ -84,9 +84,8 @@ def evaluate(
     from utils.export_tf import evaluate_methods
 
     pred_path = workspace / run_hash / f"{split}_blobs"
-    split_ = {"test": "testing", "val": "validation"}[split.name]
     pt_eval, tf_eval = evaluate_methods(
-        get_id_path(split.name), pred_path, split_, visualize
+        get_id_path(split.name), pred_path, split, visualize
     )
 
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
