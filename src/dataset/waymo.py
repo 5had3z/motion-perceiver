@@ -107,7 +107,7 @@ class WaymoDatasetConfig(DatasetConfig):
         if self.scenario_id:
             output_map.append("scenario_id")
 
-        return waymo_motion_pipe(root, cfg=self, **kwargs), output_map, root.stem
+        return waymo_motion_pipe(root, cfg=self, **kwargs), output_map, root.stem, -1
 
 
 @pipeline_def

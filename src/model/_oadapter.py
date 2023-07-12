@@ -61,13 +61,13 @@ class HeatmapOA(OutputAdapter):
         )
         self.linear = nn.Linear(num_output_channels, 1)
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
         """Forward Impl.
 
         :param x: input tensor
         :return: heatmap
         """
-        out: torch.Tensor = self.linear(x)
+        out: Tensor = self.linear(x)
         out = out.permute(0, 2, 1)
         out = out.reshape(x.shape[0], 1, *self.image_shape)
 
@@ -128,3 +128,69 @@ class OccupancyFlowOA(OutputAdapter):
         flow = flow.reshape(x.shape[0], 2, *self.image_shape)
 
         return {"heatmap": occ, "flow": flow}
+
+
+class OccupancyRefinePre(OutputAdapter):
+    """Refine before passing through the final linear layer
+    to predict occupancy"""
+
+    def __init__(
+        self,
+        num_output_channels: int,
+        conv_dim: int,
+        kernel_size: int | List[int],
+        image_shape: Tuple[int, int],
+    ):
+        super().__init__(output_shape=(math.prod(image_shape), num_output_channels))
+        self.image_shape = image_shape
+
+        if isinstance(kernel_size, int):
+            kernel_size = [kernel_size] * 2
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(
+                num_output_channels,
+                conv_dim,
+                kernel_size[0],
+                padding=kernel_size[0] // 2,
+            ),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(conv_dim, 1, kernel_size[1], padding=kernel_size[1] // 2),
+        )
+
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+        x = x.permute(0, 2, 1)
+        x = x.reshape(x.shape[0], -1, *self.image_shape)
+        out = self.conv(x)
+        return {"heatmap": out}
+
+
+class OccupancyRefinePost(OutputAdapter):
+    """Refine after predicting occupancy"""
+
+    def __init__(
+        self,
+        num_output_channels: int,
+        conv_dim: int,
+        kernel_size: int | List[int],
+        image_shape: Tuple[int, int],
+    ):
+        super().__init__(output_shape=(math.prod(image_shape), num_output_channels))
+        self.image_shape = image_shape
+        self.linear = nn.Linear(num_output_channels, 1)
+
+        if isinstance(kernel_size, int):
+            kernel_size = [kernel_size] * 2
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, conv_dim, kernel_size[0], padding=kernel_size[0] // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(conv_dim, 1, kernel_size[1], padding=kernel_size[1] // 2),
+        )
+
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+        out: Tensor = self.linear(x)
+        out = out.permute(0, 2, 1)
+        out = out.reshape(x.shape[0], 1, *self.image_shape)
+        out = self.conv(out)
+        return {"heatmap": out}

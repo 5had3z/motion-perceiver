@@ -8,7 +8,14 @@ import torch
 from torch import nn, Tensor
 
 from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA
-from ._oadapter import HeatmapOA, ClassHeatmapOA, ClassificationOA, OccupancyFlowOA
+from ._oadapter import (
+    HeatmapOA,
+    ClassHeatmapOA,
+    ClassificationOA,
+    OccupancyFlowOA,
+    OccupancyRefinePre,
+    OccupancyRefinePost,
+)
 from . import perceiver_io as pio
 
 
@@ -988,10 +995,16 @@ class MotionPerceiver(nn.Module):
 
         # Setup Decoder
         out_adapt = decoder.pop("adapter")
+        if decoder["position_encoding_type"] == "fourier":
+            out_adapt["args"]["num_output_channels"] = (
+                4 * decoder["num_frequency_bands"]
+            )
         out_adapter = {
             "heatmap": HeatmapOA,
             "classheatmap": ClassHeatmapOA,
             "occupancy_flow": OccupancyFlowOA,
+            "prerefine": OccupancyRefinePre,
+            "postrefine": OccupancyRefinePost,
         }[out_adapt["type"].lower()](**out_adapt["args"])
         self.decoder = pio.PerceiverDecoder(
             output_adapter=out_adapter,
@@ -1065,9 +1078,7 @@ class MotionPerceiver(nn.Module):
         #     plt.savefig(f"diff/{idx}_latent.png")
         #     plt.close()
 
-        x_logits = []  # [T,{K:[B,H,W]}]
-        for x_latent in x_latents:
-            x_logits.append(self.decoder(x_latent))
+        x_logits = [self.decoder(x_latent) for x_latent in x_latents]  # [T,{K:[B,H,W]}]
 
         out_logits = {}  # {K:[B,T,H,W]}
         for logit_name in x_logits[0]:
@@ -1138,7 +1149,7 @@ class MotionPercieverWSignals(MotionPerceiver):
     def __init__(self, encoder: Dict[str, Any], decoder: Dict[str, Any]) -> None:
         super().__init__(encoder, decoder)
         self.signal_decoder = SignalDecoder(
-            num_latent_channels=self.encoder["latent_dim"], **decoder
+            num_latent_channels=self.encoder.latent_dim, **decoder
         )
 
     def forward(

@@ -397,7 +397,8 @@ class PerceiverDecoder(nn.Module):
         """"""
         output = einops.repeat(self.output, "... -> b ...", b=x.shape[0])
         output = self.cross_attention(output, x)
-        return self.output_adapter(output)
+        output = self.output_adapter(output)
+        return output
 
     def forward(self, x: Tensor | Dict[str, Tensor]):
         """forward impl"""
