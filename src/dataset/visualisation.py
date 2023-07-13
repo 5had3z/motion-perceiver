@@ -24,7 +24,7 @@ def occupancy_sequence(data: Dict[str, Tensor]):
                 )
 
 
-def scatterplot_sequence(data: Dict[str, Tensor]) -> None:
+def scatterplot_sequence(data: Dict[str, Tensor], cur_idx: int = 10) -> None:
     """Plot world-lines of instances"""
     for i, (seq, valid) in enumerate(zip(data["agents"], data["agents_valid"])):
         plt.figure(f"agents_{i}", figsize=(20, 20))
@@ -33,8 +33,8 @@ def scatterplot_sequence(data: Dict[str, Tensor]) -> None:
         for inst, mask in zip(seq, valid):
             valid_pos = inst[mask != 0].cpu().numpy()
             plt.scatter(valid_pos[..., 0], valid_pos[..., 1])
-            if inst.shape[0] > 1 and mask[10] != 0:
-                xytvxvy = inst[10, 0:5].cpu().numpy()
+            if inst.shape[0] > 1 and mask[cur_idx] != 0:
+                xytvxvy = inst[cur_idx, 0:5].cpu().numpy()
 
                 # Check velocity
                 dx = 1 / 40 * xytvxvy[3]

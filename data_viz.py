@@ -17,13 +17,13 @@ def run_viz(loader: DALIGenericIterator, config: WaymoDatasetConfig) -> None:
         # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
         # dv.roadmap(data["roadmap"])
         # dv.optical_flow(data["flow"])
-        dv.roadmap_and_occupancy(
-            data["roadmap"],
-            data["heatmap"],
-            data["signals"],
-            roi_scale=config.occupancy_roi,
-        )
-        # dv.scatterplot_sequence(data)
+        # dv.roadmap_and_occupancy(
+        #     data["roadmap"],
+        #     data["heatmap"],
+        #     data["signals"],
+        #     roi_scale=config.occupancy_roi,
+        # )
+        dv.scatterplot_sequence(data, 10 // config.time_stride)
         # dv.occupancy_from_current_pose(data)
 
         break
@@ -51,6 +51,7 @@ def main():
         only_vehicles=True,
         flow_mask=True,
         velocity_norm=4.0,
+        time_stride=10,
     )
     dataloader: DALIGenericIterator = get_dataloader(waymo, Mode.val)
     run_viz(dataloader, waymo)

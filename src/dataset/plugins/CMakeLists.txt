@@ -34,3 +34,5 @@ add_subdirectory(maskfrompoly)
 add_subdirectory(roadgraph)
 
 add_subdirectory(random)
+
+add_subdirectory(stride)

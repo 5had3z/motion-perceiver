@@ -6,7 +6,7 @@ import math
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from nvidia.dali import pipeline_def, Pipeline
+from nvidia.dali import pipeline_def, Pipeline, newaxis
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
@@ -74,6 +74,8 @@ class WaymoDatasetConfig(DatasetConfig):
     occupancy_roi: float = 1.0
     flow_mask: bool = False
     velocity_norm: float = 1.0
+    time_stride: int = 1
+    random_start: bool = False
 
     @property
     def properties(self) -> Dict[str, Any]:
@@ -96,10 +98,10 @@ class WaymoDatasetConfig(DatasetConfig):
         }[mode]
 
         output_map = ["agents", "agents_valid"]
-        if self.roadmap:
-            output_map.append("roadmap")
         if self.signal_features:
             output_map.extend(["signals", "signals_valid"])
+        if self.roadmap:
+            output_map.append("roadmap")
         if self.occupancy_size > 0:
             output_map.extend(["time_idx", "heatmap"])
         if self.flow_mask:
@@ -245,10 +247,7 @@ def waymo_motion_pipe(
                 )
                 if key != "class"  # handle class separately
                 else fn.stack(
-                    *[
-                        inputs["state/type"]
-                        for _ in range(91 if cfg.full_sequence else 1)
-                    ],
+                    *[inputs["state/type"]] * 91 if cfg.full_sequence else 1,
                     axis=1,
                 )
                 for key in keys
@@ -364,32 +363,23 @@ def waymo_motion_pipe(
 
     outputs = [fn.cat(*data_out, axis=2), data_valid]
 
-    # roadmap into image
-    if cfg.roadmap:
-        outputs.append(
-            fn.roadgraph_image(
-                inputs[f"roadgraph_samples/xyz"],
-                inputs[f"roadgraph_samples/type"],
-                inputs[f"roadgraph_samples/id"],
-                inputs[f"roadgraph_samples/valid"],
-                xy_tf,
-                size=cfg.roadmap_size,
-                normalize_value=cfg.map_normalize,
-                # lane_center=True,
-                lane_markings=True,
-            )
-        )
-
     # traffic signal into tensor [id, time]
     if cfg.signal_features:
-        signal_valid = fn.cast(
-            fn.cat(
-                *[inputs[f"traffic_light_state/{time_}/valid"] for time_ in _time_keys],
-                axis=0,
+        signal_valid = fn.transpose(
+            fn.cast(
+                fn.cat(
+                    *[
+                        inputs[f"traffic_light_state/{time_}/valid"]
+                        for time_ in _time_keys
+                    ],
+                    axis=0,
+                ),
+                dtype=DALIDataType.INT32,
             ),
-            dtype=DALIDataType.INT32,
+            perm=[1, 0],
         )
-        signal_state = fn.reshape(
+
+        signal_state = fn.transpose(
             fn.cast(
                 fn.cat(
                     *[
@@ -400,8 +390,8 @@ def waymo_motion_pipe(
                 ),
                 dtype=DALIDataType.FLOAT,
             ),
-            shape=[16, -1, 1],
-        )
+            perm=[1, 0],
+        )[:, :, newaxis]
 
         # Read signal positions over time
         signal_xy = fn.stack(
@@ -419,19 +409,38 @@ def waymo_motion_pipe(
         )
 
         signal_xy = fn.coord_transform(fn.reshape(signal_xy, shape=[-1, 2]), MT=xy_tf)
-        signal_xy = fn.reshape(signal_xy, shape=[16, -1, 2])
+        signal_xy = fn.transpose(
+            fn.reshape(signal_xy, shape=[-1, 16, 2]), perm=[1, 0, 2]
+        )
 
         if cfg.map_normalize > 0.0:  # Normalize Signal Positions
             signal_xy /= cfg.map_normalize
 
             # Signals must be in map roi
-            signal_valid *= fn.reshape(
-                (dmath.abs(signal_xy[:, :, 0]) < 1)
-                * (dmath.abs(signal_xy[:, :, 1]) < 1),
-                shape=[-1, 16],
+            signal_valid *= (dmath.abs(signal_xy[:, :, 0]) < 1) * (
+                dmath.abs(signal_xy[:, :, 1]) < 1
             )
 
         outputs.extend([fn.cat(signal_xy, signal_state, axis=2), signal_valid])
+
+    if cfg.time_stride > 1:
+        outputs = fn.stride_slice(outputs, axis=1, stride=cfg.time_stride)
+
+    # roadmap into image
+    if cfg.roadmap:
+        outputs.append(
+            fn.roadgraph_image(
+                inputs[f"roadgraph_samples/xyz"],
+                inputs[f"roadgraph_samples/type"],
+                inputs[f"roadgraph_samples/id"],
+                inputs[f"roadgraph_samples/valid"],
+                xy_tf,
+                size=cfg.roadmap_size,
+                normalize_value=cfg.map_normalize,
+                # lane_center=True,
+                lane_markings=True,
+            )
+        )
 
     # Add occupancy heatmap
     if cfg.occupancy_size > 0:
@@ -450,6 +459,9 @@ def waymo_motion_pipe(
         data_all = fn.cat(
             data_xy, data_yaw, data_vxvy, data_vt, data_wl, data_class, axis=2
         )
+
+        if cfg.time_stride > 1:
+            data_all = fn.stride_slice(data_all, axis=1, stride=cfg.time_stride)
 
         occ_kwargs = dict(
             size=cfg.occupancy_size,
