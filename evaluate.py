@@ -120,8 +120,7 @@ def create_occupancy_frame(
     ground_truth: np.ndarray,
     prediction: np.ndarray,
     resolution: Tuple[int, int],
-    roadmap: Optional[np.ndarray] = None,
-    threshold: Optional[float] = None,
+    threshold: float | None = None,
 ) -> np.ndarray:
     """Create an rgb frame showing the ground truth and predicted frames"""
     bgr_frame = 255 * np.ones((*resolution, 3), dtype=np.uint8)
@@ -152,22 +151,48 @@ def create_occupancy_frame(
         g = 200 * np.ones_like(rb)
         bgr_frame[mask] = np.stack([rb, g, rb], axis=-1)
 
-    if roadmap is not None:
-        mask = roadmap > 0
-        road_thresh = 255 * threshold if threshold is not None else 255 / 2
-        for ch in range(3):
-            mask &= bgr_frame[..., ch] > road_thresh  # mostly white
-        bgr_frame[mask] = np.array((0, 0, 0), dtype=np.uint8)
-
     return bgr_frame
+
+
+def apply_roadmap_to_frame(
+    frame: np.ndarray, roadmap: np.ndarray, threshold: float | None = None
+):
+    """Overlay roadmap on rgb image"""
+    mask = roadmap > 0
+    road_thresh = 255 * threshold if threshold is not None else 255 / 2
+    for ch in range(3):
+        mask &= frame[..., ch] > road_thresh  # mostly white
+    frame[mask] = np.array((0, 0, 0), dtype=np.uint8)
+
+
+def signal_color(cls: float):
+    match int(cls):
+        case 1 | 4:  # arrow stop | stop
+            return (0, 0, 255)
+        case 2 | 5:  # arrow caution | caution
+            return (0, 255, 255)
+        case 3 | 6:  # arrow go | go
+            return (0, 255, 0)
+        case _:  # grey for other
+            return (128, 128, 128)
+
+
+def apply_signals_to_frame(frame: np.ndarray, signals: np.ndarray, scale: float):
+    """Overlay signals on rgb image"""
+    hw = frame.shape[0]
+    for signal in signals:
+        pos = tuple(int(x) for x in ((signal[:2] / scale + 1) * hw / 2))
+        frame = cv2.circle(frame, pos, 6, signal_color(signal[-1]), -1)
+    return frame
 
 
 def write_occupancy_video(
     data: np.ndarray,
     pred: np.ndarray,
     path: Path,
-    thresh: Optional[float] = None,
-    roadmap: Optional[np.ndarray] = None,
+    thresh: float | None = None,
+    roadmap: np.ndarray | None = None,
+    signals: Tuple[np.ndarray, np.ndarray] | None = None,
     roadmap_scale: float = 1.0,
 ) -> None:
     """Write video of prediction over time"""
@@ -190,13 +215,16 @@ def write_occupancy_video(
         roadmap = cv2.resize(roadmap, video_shape, interpolation=cv2.INTER_NEAREST)
 
     for idx, (pred_frame, data_frame) in enumerate(zip(pred, data)):
-        rgb_frame = create_occupancy_frame(
-            data_frame, pred_frame, video_shape, roadmap, thresh
+        bgr_frame = create_occupancy_frame(data_frame, pred_frame, video_shape, thresh)
+        if roadmap is not None:
+            apply_roadmap_to_frame(bgr_frame, roadmap, thresh)
+        if signals is not None:
+            masked_signals = signals[0][idx][signals[1][idx]]
+            bgr_frame = apply_signals_to_frame(bgr_frame, masked_signals, roadmap_scale)
+        bgr_frame = apply_ts_text(
+            idx, bgr_frame, extra=f"pr>{thresh}" if thresh else ""
         )
-        rgb_frame = apply_ts_text(
-            idx, rgb_frame, extra=f"pr>{thresh}" if thresh else ""
-        )
-        v_writer.write(rgb_frame)
+        v_writer.write(bgr_frame)
 
     v_writer.release()
 
@@ -215,23 +243,30 @@ def write_video_batch(
 
     print("enqueuing occupancy videos")
     occ_path = path / "occupancy"
-    if not occ_path.exists():
-        occ_path.mkdir(parents=True)
+    occ_path.mkdir(parents=True, exist_ok=True)
 
-    if "roadmap" in data:
-        roadmap_batch = data["roadmap"].cpu().numpy()
-    else:
-        roadmap_batch = [None for _ in range(bz)]
+    roadmap_batch = data["roadmap"].cpu().numpy() if "roadmap" in data else [None] * bz
+    signals_batch = (
+        [data["signals"], data["signals_valid"].bool()] if "signals" in data else None
+    )
 
     for cls_idx, cls_name in enumerate(p for p in pred if "heatmap" in p):
         for b_idx, (sample, pred_cls, roadmap) in enumerate(
             zip(data["heatmap"][:, cls_idx], pred[cls_name], roadmap_batch)
         ):
+            if signals_batch is not None:
+                signals = [
+                    x[b_idx].cpu().transpose(1, 0).numpy() for x in signals_batch
+                ]
+            else:
+                signals = None
+
             mpool.apply_async(
                 write_occupancy_video,
                 kwds=dict(
                     data=sample.cpu().numpy(),
                     pred=pred_cls.sigmoid().cpu().numpy(),
+                    signals=signals,
                     roadmap=roadmap,
                     path=occ_path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.webm",
                     roadmap_scale=roadmap_scale,
@@ -242,8 +277,7 @@ def write_video_batch(
     if "flow" in pred:
         print("enqueuing flow videos")
         flow_path = path / "flow"
-        if not flow_path.exists():
-            flow_path.mkdir(parents=True)
+        flow_path.mkdir(parents=True, exist_ok=True)
 
         for b_idx, (p_flow, p_occ, t_flow) in enumerate(
             zip(pred["flow"], pred["heatmap"], data["flow"])

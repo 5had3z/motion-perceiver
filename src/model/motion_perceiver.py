@@ -1055,7 +1055,7 @@ class MotionPerceiver(nn.Module):
         if signals is not None and signals.size():
             assert signals_valid is not None
             kwargs["signals"] = signals.moveaxis((2, 0), (0, 1))
-            kwargs["signals_mask"] = ~signals_valid.transpose(0, 1).bool()
+            kwargs["signals_mask"] = ~signals_valid.moveaxis((2, 0), (0, 1)).bool()
 
         x_latents: List[Tensor] = self.encoder(**kwargs)
 
