@@ -1,3 +1,4 @@
+# Compile OpenCV with imgproc for DALI Plugin
 FROM ubuntu:22.04 AS opencv-build
 WORKDIR /opt/opencv
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
@@ -9,11 +10,12 @@ RUN cd build && make -j$(nproc)
 
 FROM WITHHELD/konductor:pytorch-main
 
-# Install opencv 4.5 for DALI, only install imgproc
+# Install OpenCV from compile container
 USER root
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y make
+RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake
 COPY --from=opencv-build /opt/opencv /opt/opencv
-RUN cd /opt/opencv/build && make install && cd /root && rm -r /opt/opencv
+RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
 
 RUN pip3 install \
     opencv-python-headless \

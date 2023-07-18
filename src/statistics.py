@@ -48,7 +48,7 @@ class Occupancy(Statistic):
     @classmethod
     def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
         time_idxs = set()
-        if "random_heatmap_minmax" in kwargs:
+        if kwargs.get("random_heatmap_minmax", None) is not None:
             _min, _max = kwargs["random_heatmap_minmax"]
             time_idxs.update(set(range(_min, _max + 1)))
         if "heatmap_time" in kwargs:
