@@ -12,7 +12,7 @@ import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
 
-from konductor.modules.data import DATASET_REGISTRY, DatasetConfig, Mode
+from konductor.data import DATASET_REGISTRY, DatasetConfig, Mode
 
 
 def _cache_record_idx(dataset_path: Path) -> Path:

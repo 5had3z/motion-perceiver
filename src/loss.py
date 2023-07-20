@@ -12,7 +12,7 @@ from torch.nn.functional import (
     huber_loss,
 )
 
-from konductor.modules.losses import REGISTRY, LossConfig, ExperimentInitConfig
+from konductor.losses import REGISTRY, LossConfig, ExperimentInitConfig
 
 
 class OccupancyBCE(nn.Module):

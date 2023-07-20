@@ -19,7 +19,7 @@ try:
 except ImportError:
     warn("Cannot import tensorflow, but only required for data export")
 
-from konductor.modules.data import DATASET_REGISTRY, DatasetConfig, Mode
+from konductor.data import DATASET_REGISTRY, DatasetConfig, Mode
 
 from nvidia.dali import pipeline_def, Pipeline
 from nvidia.dali.types import DALIDataType

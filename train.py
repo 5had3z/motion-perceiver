@@ -5,6 +5,7 @@ from typing import Tuple, Dict, List, Type
 import torch
 from torch import Tensor
 from torch.profiler import record_function
+from konductor.utilities import comm
 from konductor.trainer.pbar import pbar_wrapper
 from konductor.trainer.init import get_training_parser, init_training, cli_init_config
 from konductor.trainer.pytorch import (
@@ -83,17 +84,6 @@ def setup(cli_args: NS) -> Trainer:
     )
 
 
-def run(trainer: Trainer, epochs: int) -> None:
-    """Run training until epochs is reached"""
-    logging.info("Begin training")
-    while trainer.data_manager.epoch < epochs:
-        trainer.run_epoch()
-
-    # Stop async thread
-    if isinstance(trainer.loss_monitor, AsyncFiniteMonitor):
-        trainer.loss_monitor.stop()
-
-
 def main() -> None:
     cli_parser = get_training_parser()
     cli_parser.add_argument("--pbar", action="store_true")
@@ -101,12 +91,17 @@ def main() -> None:
     cli_args = cli_parser.parse_args()
     torch.set_float32_matmul_precision("medium" if cli_args.amp else "high")
     trainer = setup(cli_args)
-    run(trainer, cli_args.epochs)
+    trainer.train(epoch=cli_args.epoch, iteration=cli_args.iteration)
+
+    # Stop async thread
+    if isinstance(trainer.loss_monitor, AsyncFiniteMonitor):
+        trainer.loss_monitor.stop()
 
 
 if __name__ == "__main__":
+    comm.initialize()
     logging.basicConfig(
-        format="%(asctime)s-%(processName)s-%(levelname)s-%(name)s: %(message)s",
+        format=f"%(asctime)s-RANK:{comm.get_local_rank()}-%(levelname)s-%(name)s: %(message)s",
         level=logging.INFO,
     )
     main()

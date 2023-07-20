@@ -5,12 +5,9 @@ import numpy as np
 import torch
 from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
-from konductor.trainer.init import (
-    get_dataset_config,
-    get_model,
-    get_dataloader,
-    ExperimentInitConfig,
-)
+from konductor.data import get_dataloader, get_dataset_config
+from konductor.models import get_model
+from konductor.init import ExperimentInitConfig
 from konductor.trainer.pbar import ProgressBar
 
 from src.model.motion_perceiver import MotionPerceiver
