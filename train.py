@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 from torch.profiler import record_function
 from konductor.utilities import comm
-from konductor.trainer.pbar import pbar_wrapper
+from konductor.utilities.pbar import pbar_wrapper
 from konductor.trainer.init import get_training_parser, init_training, cli_init_config
 from konductor.trainer.pytorch import (
     PyTorchTrainer,
