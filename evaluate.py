@@ -19,13 +19,10 @@ from src.dataset.interaction import InteractionConfig
 from src.statistics import Occupancy
 from src.model import MotionPerceiver
 
-from konductor.trainer.init import (
-    parser_add_common_args,
-    cli_init_config,
-    get_model,
-    get_dataloader,
-    get_dataset_config,
-)
+from konductor.utilities.pbar import LivePbar
+from konductor.models import get_model
+from konductor.data import get_dataloader, get_dataset_config
+from konductor.trainer.init import parser_add_common_args, cli_init_config
 
 
 @dataclass
@@ -384,7 +381,7 @@ def statistic_evaluation(
     if config.filter_ids is not None:
         loader = yield_filtered_batch(loader, config.filter_ids, config.batch_size)
 
-    with tqdm(total=max_samples // config.batch_size) as pbar:
+    with LivePbar(total=max_samples // config.batch_size) as pbar:
         for data in loader:
             n_samples = pbar.n * config.batch_size
             if n_samples >= max_samples:
@@ -487,7 +484,6 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
     args = parser.parse_args()
 
     exp_cfg = cli_init_config(args)
-    exp_cfg.model[0].optimizer.args.pop("step_interval", None)
 
     if exp_cfg.data[0].dataset.args.get("map_normalize", 0) == 80:
         exp_cfg.data[0].dataset.args["occupancy_roi"] = 0.5
