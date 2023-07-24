@@ -8,7 +8,7 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from konductor.data import get_dataloader, get_dataset_config
 from konductor.models import get_model
 from konductor.init import ExperimentInitConfig
-from konductor.trainer.pbar import ProgressBar
+from konductor.utilities.pbar import LivePbar
 
 from src.model.motion_perceiver import MotionPerceiver
 from src.dataset.waymo import WaymoDatasetConfig
@@ -55,7 +55,7 @@ def run_export(
 ):
     """Run inference on scenario ids and write
     predictions to pred_path and the ground truth to gt_path"""
-    with ProgressBar(total=len(scenario_ids), desc="Exporting") as pbar:
+    with LivePbar(total=len(scenario_ids), desc="Exporting") as pbar:
         for batch in yield_filtered_batch(dataloader, scenario_ids, batch_size):
             pbar.update(inference(model, batch[0], pred_path, gt_path))
 
