@@ -64,8 +64,6 @@ def initialize(
     exp_cfg: ExperimentInitConfig, args
 ) -> Tuple[MotionPerceiver, DALIGenericIterator]:
     """Initialise model and dataloader for prediction export"""
-    exp_cfg.model[0].optimizer.args.pop("step_interval", None)
-
     data_cfg: WaymoDatasetConfig = get_dataset_config(exp_cfg)
     data_cfg.filter_future = True
     data_cfg.scenario_id = True

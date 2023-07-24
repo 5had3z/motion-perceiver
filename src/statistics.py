@@ -84,7 +84,7 @@ class Occupancy(Statistic):
 
         # Add Statistic Keys and dummy buffer
         for key in data_keys:
-            self._statistics[key] = np.empty(0)
+            self._statistics[key] = np.empty(self._buffer_length)
 
         self.reset()
 
@@ -162,15 +162,11 @@ class Occupancy(Statistic):
     ) -> None:
         """Currently assume the same timesteps across batches"""
         for tidx, timestep in enumerate(timesteps[0]):
-            self._append_sample(
-                f"{classname}IoU_{timestep}",
-                self.calculate_soft_iou(prediction[:, tidx], target[:, tidx]),
-            )
+            iou = self.calculate_soft_iou(prediction[:, tidx], target[:, tidx])
+            self._append_sample(f"{classname}IoU_{timestep}", iou.mean())
 
-            self._append_sample(
-                f"{classname}AUC_{timestep}",
-                self.calculate_auc(prediction[:, tidx], target[:, tidx]),
-            )
+            auc = self.calculate_auc(prediction[:, tidx], target[:, tidx])
+            self._append_sample(f"{classname}AUC_{timestep}", auc.mean())
 
     def run_over_classes(
         self, prediction: Tensor, target: Tensor, timesteps: Tensor, classname: str = ""
@@ -183,12 +179,11 @@ class Occupancy(Statistic):
             prediction = prediction.squeeze(1)
             target = target.squeeze(1)
 
-            self._append_sample(
-                f"{classname}IoU", self.calculate_soft_iou(prediction, target)
-            )
-            self._append_sample(
-                f"{classname}AUC", self.calculate_auc(prediction, target)
-            )
+            iou = self.calculate_soft_iou(prediction, target)
+            self._append_sample(f"{classname}IoU", iou.mean())
+
+            auc = self.calculate_auc(prediction, target)
+            self._append_sample(f"{classname}AUC", auc.mean())
         else:
             self.run_over_timesteps(prediction, target, timesteps, classname)
 
@@ -200,12 +195,8 @@ class Occupancy(Statistic):
         for idx_, name in enumerate(p for p in predictions if "heatmap" in p):
             prediction = predictions[name]
             target = targets["heatmap"][:, idx_]
-            self.run_over_classes(
-                prediction,
-                target,
-                targets["time_idx"],
-                f"{name}_" if name != "heatmap" else "",
-            )
+            prefix = f"{name}_" if name != "heatmap" else ""
+            self.run_over_classes(prediction, target, targets["time_idx"], prefix)
 
 
 class Signal(Statistic):
