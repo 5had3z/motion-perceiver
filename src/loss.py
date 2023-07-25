@@ -183,3 +183,32 @@ class FlowLossConfig(LossConfig):
         kwargs = asdict(self)
         del kwargs["names"]
         return FlowLoss(**kwargs)
+
+
+class ConservationLoss(nn.Module):
+    """Sum of gt pixels should equal sum of sigmoid logits"""
+
+    def __init__(self, weight: float = 0) -> None:
+        super().__init__()
+        self.weight = weight
+
+    def forward(
+        self, preds: Dict[str, Tensor], targets: Dict[str, Tensor]
+    ) -> Dict[str, Tensor]:
+        loss = torch.sum(preds["heatmap"].sigmoid(), dim=[-2, -1]) - torch.sum(
+            targets["heatmap"][:, 0], dim=[-2, -1]
+        )
+        return {"conservation": self.weight * loss.mean()}
+
+
+@dataclass
+@REGISTRY.register_module("conservation")
+class ConservationConfig(LossConfig):
+    @classmethod
+    def from_config(cls, config: ExperimentInitConfig, idx: int, **kwargs):
+        return super().from_config(config, idx, names=["conservation"])
+
+    def get_instance(self) -> Any:
+        kwargs = asdict(self)
+        del kwargs["names"]
+        return ConservationLoss(**kwargs)

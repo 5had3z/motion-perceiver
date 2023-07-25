@@ -207,7 +207,8 @@ class ImageIA(InputAdapter):
 
         # repeat position encoding along batch dimension
         x_enc = einops.repeat(self.position_encoding, "... -> b ...", b=b)
-        return torch.cat([x, x_enc], dim=-1)
+        x_cat = torch.cat([x, x_enc], dim=-1)
+        return x_cat
 
 
 class TextIA(InputAdapter):

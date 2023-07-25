@@ -318,7 +318,7 @@ def waymo_motion_pipe(
     # Handle class stacking specially
     data_class = fn.stack(
         *[inputs["state/type"]] * 91 if cfg.full_sequence else 1, axis=1
-    )
+    )[:, :, newaxis]
     if cfg.only_vehicles:  # Mark all other classes as invalid
         data_valid *= fn.reshape(data_class == 1, shape=[128, -1])
 
