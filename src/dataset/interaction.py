@@ -233,6 +233,7 @@ class InteractionConfig(DatasetConfig):
     random_heatmap_minmax: Tuple[int, int] | None = None
     random_heatmap_count: int = 0
     occupancy_roi: float = 1.0
+    time_stride: int = 1
 
     @property
     def properties(self) -> Dict[str, Any]:

@@ -73,6 +73,7 @@ def initialize(
     data_cfg.val_loader.args["batch_size"] = 1
     data_cfg.random_heatmap_count = 0
     data_cfg.heatmap_time = list(range(20, 91, 10))
+    data_cfg.heatmap_time = [t // data_cfg.time_stride for t in data_cfg.heatmap_time]
 
     model: MotionPerceiver = get_model(exp_cfg).cuda()
     ckpt = torch.load(

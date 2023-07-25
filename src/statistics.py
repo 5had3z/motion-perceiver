@@ -58,6 +58,7 @@ class Occupancy(Statistic):
             auc_threholds=kwargs.get("auc_thresholds", 100),
             time_idxs=sorted(list(time_idxs)) if len(time_idxs) > 0 else None,
             classes=kwargs.get("classes", None),
+            time_stride=kwargs.get("time_stride", 1),
             buffer_length=buffer_length,
             writepath=writepath,
             reduce_batch=True,
@@ -68,17 +69,21 @@ class Occupancy(Statistic):
         auc_thresholds: int = 100,
         time_idxs: List[int] | None = None,
         classes: List[str] | None = None,
+        time_stride: int = 1,
         **kwargs,
     ):
         super().__init__(logger_name="OccupancyEval", **kwargs)
         self.auc_thresholds = auc_thresholds
         self.time_idxs = time_idxs
+        self.time_stride = time_stride
         self.classes = classes
 
         # Create statistic keys
         data_keys = ["IoU", "AUC"]
         if time_idxs is not None:  # Statistic_Time
-            data_keys = [f"{s}_{t}" for s, t in product(data_keys, time_idxs)]
+            data_keys = [
+                f"{s}_{t * time_stride}" for s, t in product(data_keys, time_idxs)
+            ]
         if classes is not None:  # Class_Statistic
             data_keys = [f"{c}_{s}" for c, s in product(classes, data_keys)]
 
@@ -162,6 +167,7 @@ class Occupancy(Statistic):
     ) -> None:
         """Currently assume the same timesteps across batches"""
         for tidx, timestep in enumerate(timesteps[0]):
+            timestep *= self.time_stride
             iou = self.calculate_soft_iou(prediction[:, tidx], target[:, tidx])
             self._append_sample(f"{classname}IoU_{timestep}", iou.mean())
 

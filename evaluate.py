@@ -34,6 +34,7 @@ class EvalConfig:
     video_thresh: Optional[float] = None
     filter_ids: Optional[Set[str]] = None
     roi_scale: float = 1.0
+    time_stride: int = 1
 
 
 def scenairo_id_tensor_2_str(batch_ids: Tensor) -> List[str]:
@@ -191,12 +192,13 @@ def write_occupancy_video(
     roadmap: np.ndarray | None = None,
     signals: Tuple[np.ndarray, np.ndarray] | None = None,
     roadmap_scale: float = 1.0,
+    time_stride: int = 1,
 ) -> None:
     """Write video of prediction over time"""
 
     video_shape = (800, 800)
     v_writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10, video_shape
+        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10 // time_stride, video_shape
     )
 
     if not v_writer.isOpened():
@@ -219,7 +221,7 @@ def write_occupancy_video(
             masked_signals = signals[0][idx][signals[1][idx]]
             bgr_frame = apply_signals_to_frame(bgr_frame, masked_signals, roadmap_scale)
         bgr_frame = apply_ts_text(
-            idx, bgr_frame, extra=f"pr>{thresh}" if thresh else ""
+            idx * time_stride, bgr_frame, extra=f"pr>{thresh}" if thresh else ""
         )
         v_writer.write(bgr_frame)
 
@@ -231,8 +233,9 @@ def write_video_batch(
     pred: Dict[str, Tensor],
     path: Path,
     global_it: int,
-    threshold: Optional[float] = None,
+    threshold: float | None = None,
     roadmap_scale: float = 1.0,
+    time_stride: int = 1,
 ) -> None:
     """Write batch of videos"""
     mpool = mp.Pool(processes=mp.cpu_count() // 2)
@@ -268,6 +271,7 @@ def write_video_batch(
                     path=occ_path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.webm",
                     roadmap_scale=roadmap_scale,
                     thresh=threshold,
+                    time_stride=time_stride,
                 ),
             )
 
@@ -400,6 +404,7 @@ def statistic_evaluation(
                     pbar.n,
                     config.video_thresh,
                     config.roi_scale,
+                    config.time_stride,
                 )
 
             if n_samples < config.n_statistic:
@@ -511,7 +516,7 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
     model = model.eval().cuda()
 
     if isinstance(dataset_cfg, WaymoDatasetConfig):
-        dataset_cfg.heatmap_time = list(range(0, 91))
+        dataset_cfg.heatmap_time = list(range(0, 90 // dataset_cfg.time_stride + 1))
         dataset_cfg.filter_future = True
         dataset_cfg.waymo_eval_frame = True
     elif isinstance(dataset_cfg, InteractionConfig):
@@ -544,6 +549,7 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
         thresh,
         filter_ids,
         dataset_cfg.occupancy_roi,
+        dataset_cfg.time_stride,
     )
 
     logger = Occupancy.from_config(
