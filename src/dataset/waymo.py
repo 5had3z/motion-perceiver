@@ -11,32 +11,9 @@ from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
-
 from konductor.data import DATASET_REGISTRY, DatasetConfig, Mode
 
-
-def _cache_record_idx(dataset_path: Path) -> Path:
-    """
-    Initially try to make with tf record dali index
-    in folder adjacent to dataset suffixed by idx.
-    If that fails due to permission requirements, make in /tmp.
-    """
-    dali_idx_path = dataset_path.parent / f"{dataset_path.name}_dali_idx"
-    if not dali_idx_path.exists():
-        try:
-            dali_idx_path.mkdir()
-            return dali_idx_path
-        except OSError:
-            print(
-                f"Unable to create dali index at {dali_idx_path},"
-                f" changing to /tmp/{dataset_path.name}_dali_idx"
-            )
-
-            dali_idx_path = Path(f"/tmp/{dataset_path.name}_dali_idx")
-            if not dali_idx_path.exists():
-                dali_idx_path.mkdir()
-
-    return dali_idx_path
+from .utils import get_cache_record_idx_path
 
 
 # fmt: off
@@ -65,9 +42,6 @@ class WaymoDatasetConfig(DatasetConfig):
     separate_classes: bool = False
     random_heatmap_minmax: Tuple[int, int] | None = None
     random_heatmap_count: int = 0
-    scenario_id: bool = False
-    use_sdc_frame: bool = False
-    waymo_eval_frame: bool = False
     roadmap_size: int | None = None
     only_vehicles: bool = False
     # How to scale the occupancy roi, whole image => 1, center crop => 0.5
@@ -76,6 +50,11 @@ class WaymoDatasetConfig(DatasetConfig):
     velocity_norm: float = 1.0
     time_stride: int = 1
     random_start: bool = False
+
+    # Waymo Motion Specific
+    scenario_id: bool = False
+    use_sdc_frame: bool = False
+    waymo_eval_frame: bool = False
 
     @property
     def properties(self) -> Dict[str, Any]:
@@ -109,7 +88,8 @@ class WaymoDatasetConfig(DatasetConfig):
         if self.scenario_id:
             output_map.append("scenario_id")
 
-        return waymo_motion_pipe(root, cfg=self, **kwargs), output_map, root.stem, -1
+        datapipe = waymo_motion_pipe(root, cfg=self, **kwargs)
+        return datapipe, output_map, root.stem, -1
 
 
 @pipeline_def
@@ -205,7 +185,7 @@ def waymo_motion_pipe(
     features_description.update(traffic_light_features)
     features_description["scenario/id"] = tfrec.FixedLenFeature([], tfrec.string, "")
 
-    tfrec_idx_root = _cache_record_idx(record_root)
+    tfrec_idx_root = get_cache_record_idx_path(record_root)
 
     def tfrecord_idx(tf_record: Path) -> Path:
         return tfrec_idx_root / f"{tf_record.name}.idx"
@@ -240,20 +220,12 @@ def waymo_motion_pipe(
 
     def stack_keys(*keys):
         """Stacks raw data to [inst, time, keys]"""
-        return fn.stack(
-            *[
-                fn.cat(
-                    *[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1
-                )
-                if key != "class"  # handle class separately
-                else fn.stack(
-                    *[inputs["state/type"]] * 91 if cfg.full_sequence else 1,
-                    axis=1,
-                )
-                for key in keys
-            ],
-            axis=2,
-        )
+        assert "class" not in keys
+        time_cat = [
+            fn.cat(*[inputs[f"state/{time_}/{key}"] for time_ in _time_keys], axis=1)
+            for key in keys
+        ]
+        return fn.stack(*time_cat, axis=2)
 
     data_xy = stack_keys("x", "y")
 
@@ -343,7 +315,10 @@ def waymo_motion_pipe(
     #         dmath.pow(data["velocity_x"], 2) + dmath.pow(data["velocity_y"], 2)
     #     )
 
-    data_class = stack_keys("class")
+    # Handle class stacking specially
+    data_class = fn.stack(
+        *[inputs["state/type"]] * 91 if cfg.full_sequence else 1, axis=1
+    )
     if cfg.only_vehicles:  # Mark all other classes as invalid
         data_valid *= fn.reshape(data_class == 1, shape=[128, -1])
 

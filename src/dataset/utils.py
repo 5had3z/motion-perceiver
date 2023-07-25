@@ -3,6 +3,7 @@ Extra utilities for calculating the maximum map size and
 the percentage of vehicles in the scene occluded
 """
 from typing import Dict
+from pathlib import Path
 from matplotlib import pyplot as plt
 
 import numpy as np
@@ -10,6 +11,30 @@ import torch
 from tqdm.auto import tqdm
 from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
+
+
+def get_cache_record_idx_path(dataset_path: Path) -> Path:
+    """
+    Initially try to make with tf record dali index
+    in folder adjacent to dataset suffixed by idx.
+    If that fails due to permission requirements, make in /tmp.
+    """
+    dali_idx_path = dataset_path.parent / f"{dataset_path.name}_dali_idx"
+    if not dali_idx_path.exists():
+        try:
+            dali_idx_path.mkdir()
+            return dali_idx_path
+        except OSError:
+            print(
+                f"Unable to create dali index at {dali_idx_path},"
+                f" changing to /tmp/{dataset_path.name}_dali_idx"
+            )
+
+            dali_idx_path = Path(f"/tmp/{dataset_path.name}_dali_idx")
+            if not dali_idx_path.exists():
+                dali_idx_path.mkdir()
+
+    return dali_idx_path
 
 
 def check_maximum_map_size(dataloaders: Dict[str, DALIGenericIterator]) -> None:

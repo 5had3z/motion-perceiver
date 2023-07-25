@@ -46,10 +46,11 @@ def scatterplot_sequence(data: Dict[str, Tensor], cur_idx: int = 10) -> None:
                 dy = 0.02 * np.sin(np.pi * xytvxvy[2])
                 plt.arrow(xytvxvy[0], xytvxvy[1], dx, dy, width=0.005, color="r")
 
-        signals = data["signals"][i, ..., :2]
-        mask = data["signals_valid"][i]
-        signals = signals[mask.bool()].cpu().numpy()
-        plt.scatter(signals[:, 0], signals[:, 1], marker="x", s=500)
+        if "signals" in data:
+            signals = data["signals"][i, ..., :2]
+            mask = data["signals_valid"][i]
+            signals = signals[mask.bool()].cpu().numpy()
+            plt.scatter(signals[:, 0], signals[:, 1], marker="x", s=500)
 
         plt.tight_layout()
         plt.savefig(f"agents_{i}.png")
@@ -204,12 +205,15 @@ def optical_flow(flow: Tensor) -> None:
 
 
 def roadmap_and_occupancy(
-    roadmaps: Tensor, occupancies: Tensor, signals: Tensor, roi_scale: float = 1
+    roadmaps: Tensor, occupancies: Tensor, signals: Tensor | None, roi_scale: float = 1
 ) -> None:
     """Overlay both occupancy and roadmap image to ensure they're synchronised"""
     roadmaps = roadmaps.cpu().numpy()
     occupancies = occupancies.cpu().numpy()
-    signals = signals.cpu().numpy()[:, :, 0, 0:2]  # xy same for all time
+    if signals is None:
+        signals = torch.full((roadmaps.shape[0], 1, 2), -1).cpu().numpy()
+    else:
+        signals = signals.cpu().numpy()[:, :, 0, 0:2]  # xy same for all time
 
     for bidx, (roadmap, occupancy_vec, signal) in enumerate(
         zip(roadmaps, occupancies, signals)
