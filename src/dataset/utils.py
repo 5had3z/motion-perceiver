@@ -4,7 +4,6 @@ the percentage of vehicles in the scene occluded
 """
 from typing import Dict
 from pathlib import Path
-from matplotlib import pyplot as plt
 
 import numpy as np
 import torch
@@ -128,6 +127,9 @@ def evaluate_vehicle_occulsions(
 
     waypoint_decay /= n_samples
     print(waypoint_decay)
+    # Plot Output and save figure
+    from matplotlib import pyplot as plt
+
     plt.figure(figsize=(6, 3))
     plt.title("Observed Agent Decay")
     plt.plot(np.arange(0, len(waypoints)), (waypoint_decay * 100).cpu().numpy(), lw=5)
