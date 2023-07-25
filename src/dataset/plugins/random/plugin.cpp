@@ -11,7 +11,7 @@ std::vector<int32_t> generateTimeIdxs(
     const std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount)
 {
     // Create vector of candidates
-    std::vector<int64_t> randomIdxs(maxTime - minTime);
+    std::vector<int64_t> randomIdxs(maxTime + 1 - minTime);
     std::iota(randomIdxs.begin(), randomIdxs.end(), minTime);
 
     // Remove if within the constant set
