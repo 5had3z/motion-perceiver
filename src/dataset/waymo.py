@@ -452,9 +452,7 @@ def waymo_motion_pipe(
 
     if cfg.scenario_id:
         # Add padding since scenario_id contains <=16 characters
-        pad_scenario_str = Constant(16 * [0], dtype=DALIDataType.UINT8)
-        scenario_len = fn.shapes(inputs["scenario/id"])[0]
-        scenario_pad = pad_scenario_str[:scenario_len] + inputs["scenario/id"]
+        scenario_pad = fn.pad(inputs["scenario/id"], fill_value=0)
         return tuple([o.gpu() for o in outputs] + [scenario_pad])
 
     return tuple([o.gpu() for o in outputs])
