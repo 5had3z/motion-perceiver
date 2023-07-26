@@ -195,10 +195,11 @@ class ConservationLoss(nn.Module):
     def forward(
         self, preds: Dict[str, Tensor], targets: Dict[str, Tensor]
     ) -> Dict[str, Tensor]:
-        loss = torch.sum(preds["heatmap"].sigmoid(), dim=[-2, -1]) - torch.sum(
-            targets["heatmap"][:, 0], dim=[-2, -1]
+        loss = l1_loss(
+            torch.sum(preds["heatmap"].sigmoid(), dim=[-2, -1]),
+            torch.sum(targets["heatmap"][:, 0], dim=[-2, -1]),
         )
-        return {"conservation": self.weight * loss.mean()}
+        return {"conservation": self.weight * loss}
 
 
 @dataclass
