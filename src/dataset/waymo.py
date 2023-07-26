@@ -450,9 +450,12 @@ def waymo_motion_pipe(
         if cfg.flow_mask:
             outputs.append(fn.flow_mask(data_all, data_valid, time_idx, **occ_kwargs))
 
+    # Send outputs to gpu before adding cpu-only data
+    outputs = [o.gpu() for o in outputs]
+
     if cfg.scenario_id:
         # Add padding since scenario_id contains <=16 characters
         scenario_pad = fn.pad(inputs["scenario/id"], fill_value=0)
-        return tuple([o.gpu() for o in outputs] + [scenario_pad])
+        outputs.append(scenario_pad)
 
-    return tuple([o.gpu() for o in outputs])
+    return tuple(outputs)
