@@ -20,9 +20,10 @@ class MotionPerceiverConfig(TorchModelConfig):
         props = get_dataset_properties(config)
         model_cfg = config.model[idx].args
 
-        if "roadgraph_ia" in model_cfg["encoder"]:
+        if rg_ia := model_cfg["encoder"].get("roadgraph_ia", False):
             sz = props["roadmap_size"]
-            model_cfg["encoder"]["roadgraph_ia"]["args"]["image_shape"] = [1, sz, sz]
+            if rg_ia["type"] == "image":
+                rg_ia["args"]["image_shape"] = [1, sz, sz]
 
         # Number of "extra features" is number of vehicle features minus xyt and class
         _skip_labels = {"x", "y", "bbox_yaw", "class"}

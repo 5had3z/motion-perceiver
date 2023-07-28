@@ -22,7 +22,9 @@ def _debug_plot(tensor: Tensor, figname: str) -> None:
     cv2.imwrite(figname, im_norm)
 
 
-def _generate_positions_for_encoding(spatial_shape, v_min=-1.0, v_max=1.0):
+def _generate_positions_for_encoding(
+    spatial_shape: Sequence[int], v_min=-1.0, v_max=1.0
+):
     """
     Create evenly spaced position coordinates for
     spatial_shape with values in [v_min, v_max].
@@ -209,32 +211,6 @@ class ImageIA(InputAdapter):
         x_enc = einops.repeat(self.position_encoding, "... -> b ...", b=b)
         x_cat = torch.cat([x, x_enc], dim=-1)
         return x_cat
-
-
-class TextIA(InputAdapter):
-    """blah"""
-
-    def __init__(self, vocab_size: int, max_seq_len: int, num_input_channels: int):
-        super().__init__(num_input_channels=num_input_channels)
-
-        self.text_embedding = nn.Embedding(vocab_size, num_input_channels)
-        self.pos_encoding = nn.Parameter(torch.empty(max_seq_len, num_input_channels))
-
-        self.scale = math.sqrt(num_input_channels)
-        self._init_parameters()
-
-    @torch.no_grad()
-    def _init_parameters(self):
-        self.text_embedding.weight.data.uniform_(-0.1, 0.1)
-        self.pos_encoding.uniform_(-0.5, 0.5)
-
-    def forward(self, x):
-        b, l = x.shape  # noqa: E741
-
-        # repeat position encodings along batch dimension
-        p_enc = einops.repeat(self.pos_encoding[:l], "... -> b ...", b=b)
-
-        return self.text_embedding(x) * self.scale + p_enc
 
 
 class TrafficIA(InputAdapter):
@@ -462,3 +438,58 @@ class SignalIA(InputAdapter):
             pad_mask = torch.cat([pad_mask, torch.zeros_like(pad_mask[:, [0]])], dim=1)
 
         return enc_x, pad_mask
+
+
+class RasterEncoder(InputAdapter):
+    """Raster of roadgraph goes through simple conv net
+    and tokenized with added position embeddings"""
+
+    def __init__(
+        self,
+        conv_ch: int,
+        avg_pool_shape: Tuple[int, int],
+        num_frequency_bands: int,
+        max_frequency: float | None = None,
+        raster_ch: int = 1,
+    ) -> None:
+        pos_enc_ch = len(avg_pool_shape) * (2 * num_frequency_bands)
+        super().__init__(num_input_channels=conv_ch + pos_enc_ch)
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(raster_ch, conv_ch * 2, 5, 2, 1),
+            nn.BatchNorm2d(conv_ch * 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(conv_ch * 2, conv_ch * 2, 3, 2, 1),
+            nn.BatchNorm2d(conv_ch * 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(conv_ch * 2, conv_ch, 3, 2, 1),
+            nn.BatchNorm2d(conv_ch),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d(avg_pool_shape),
+        )
+
+        # create encodings for single example
+        pos = _generate_positions_for_encoding(avg_pool_shape)
+        enc = _generate_position_encodings(
+            pos,
+            num_frequency_bands,
+            None if max_frequency is None else [max_frequency] * 2,
+            False,
+        )
+
+        # flatten encodings along spatial dimensions
+        enc = einops.rearrange(enc, "... c -> (...) c")
+
+        # position encoding prototype
+        self.register_buffer("position_encoding", enc, persistent=False)
+
+    def forward(self, raster: Tensor) -> Tensor:
+        """Create tokenized image"""
+        # Encode Image
+        x = self.encoder(raster)
+        x = einops.rearrange(x, "b c ... -> b (...) c")
+
+        # repeat position encoding along batch dimension
+        x_enc = einops.repeat(self.position_encoding, "... -> b ...", b=raster.shape[0])
+        x_cat = torch.cat([x, x_enc], dim=-1)
+        return x_cat

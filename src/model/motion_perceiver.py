@@ -7,7 +7,7 @@ import einops
 import torch
 from torch import nn, Tensor
 
-from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA
+from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA, RasterEncoder
 from ._oadapter import (
     HeatmapOA,
     ClassHeatmapOA,
@@ -354,7 +354,9 @@ class MotionEncoder3Ctx(MotionEncoder3):
             self.signal_attn = None
 
         if roadgraph_ia is not None:
-            self.roadgraph_encoder = ImageIA(**roadgraph_ia["args"])
+            self.roadgraph_encoder = {"image": ImageIA, "conv1": RasterEncoder}[
+                roadgraph_ia["type"]
+            ](**roadgraph_ia["args"])
 
             self.road_attn = pio.Sequential(
                 pio.cross_attention_layer(
