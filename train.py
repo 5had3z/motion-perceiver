@@ -69,11 +69,9 @@ class Trainer(PyTorchTrainer):
 
 def setup(cli_args: NS) -> Trainer:
     exp_config = cli_init_config(cli_args)
-    trainer_config = PyTorchTrainerConfig(
-        loss_monitor=AsyncFiniteMonitor(), amp=cli_args.amp
-    )
     if cli_args.pbar:
-        trainer_config.pbar = pbar_wrapper
+        exp_config.trainer_kwargs["pbar"] = pbar_wrapper
+    trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
 
     statistics: Dict[str, Type[Statistic]] = {"occupancy": src.statistics.Occupancy}
     if exp_config.model[0].args.get("signal_decoder", False):
