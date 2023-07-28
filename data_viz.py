@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """Show the output of the dataloader
 to validate its doing the right thing"""
 from typing import Dict

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """Overrides model and dataloader params to generate the full video"""
 import argparse
 from dataclasses import dataclass

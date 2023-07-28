@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from argparse import Namespace as NS
 import logging
 from typing import Tuple, Dict, List, Type
