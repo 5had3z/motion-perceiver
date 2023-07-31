@@ -61,7 +61,7 @@ def run_export(
 
 
 def initialize(
-    exp_cfg: ExperimentInitConfig, args
+    exp_cfg: ExperimentInitConfig, split: str
 ) -> Tuple[MotionPerceiver, DALIGenericIterator]:
     """Initialise model and dataloader for prediction export"""
     data_cfg: WaymoDatasetConfig = get_dataset_config(exp_cfg)
@@ -72,7 +72,7 @@ def initialize(
     data_cfg.only_vehicles = True
     data_cfg.val_loader.args["batch_size"] = 1
     data_cfg.random_heatmap_count = 0
-    data_cfg.heatmap_time = list(range(20, 91, 10))
+    data_cfg.heatmap_time = list(range(20, 91, 10))  # Standard eval timesteps
     data_cfg.heatmap_time = [t // data_cfg.time_stride for t in data_cfg.heatmap_time]
 
     model: MotionPerceiver = get_model(exp_cfg).cuda()
@@ -82,4 +82,4 @@ def initialize(
     )["model"]
     model.load_state_dict(ckpt)
 
-    return model.eval(), get_dataloader(data_cfg, args.split)
+    return model.eval(), get_dataloader(data_cfg, split)
