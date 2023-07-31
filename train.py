@@ -88,7 +88,7 @@ def main() -> None:
     cli_parser = get_training_parser()
     cli_parser.add_argument("--pbar", action="store_true")
     cli_args = cli_parser.parse_args()
-    torch.set_float32_matmul_precision("medium" if cli_args.amp else "high")
+    torch.set_float32_matmul_precision("high")
     trainer = setup(cli_args)
     trainer.train(epoch=cli_args.epoch, iteration=cli_args.iteration)
 
