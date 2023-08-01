@@ -4,7 +4,7 @@ General AP Statistics for Occupancy Heatmap
 from dataclasses import dataclass
 from pathlib import Path
 from itertools import product
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -39,6 +39,25 @@ def _div_no_nan(a: Tensor, b: Tensor) -> Tensor:
     return c
 
 
+def get_time_idxs(kwargs: Dict[str, Any]) -> List[int]:
+    """Get time idxs from dataset properties"""
+    time_idxs = set()
+    if kwargs.get("random_heatmap_minmax", None) is not None:
+        _min, _max = kwargs["random_heatmap_minmax"]
+        time_idxs.update(set(range(_min, _max + 1)))
+
+    if len(kwargs.get("random_heatmap_piecewise", [])) > 0:
+        for pargs in kwargs["random_heatmap_piecewise"]:
+            time_idxs.update(
+                set(range(pargs["min"], pargs["max"] + 1, pargs["stride"]))
+            )
+
+    if "heatmap_time" in kwargs:
+        time_idxs.update(set(kwargs["heatmap_time"]))
+
+    return sorted(time_idxs)
+
+
 @STATISTICS_REGISTRY.register_module("occupancy")
 class Occupancy(Statistic):
     """Soft IoU and AUC for Occupancy"""
@@ -47,16 +66,10 @@ class Occupancy(Statistic):
 
     @classmethod
     def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
-        time_idxs = set()
-        if kwargs.get("random_heatmap_minmax", None) is not None:
-            _min, _max = kwargs["random_heatmap_minmax"]
-            time_idxs.update(set(range(_min, _max + 1)))
-        if "heatmap_time" in kwargs:
-            time_idxs.update(set(kwargs["heatmap_time"]))
-
+        time_idxs = get_time_idxs(kwargs)
         return cls(
             auc_threholds=kwargs.get("auc_thresholds", 100),
-            time_idxs=sorted(list(time_idxs)) if len(time_idxs) > 0 else None,
+            time_idxs=time_idxs if len(time_idxs) > 0 else None,
             classes=kwargs.get("classes", None),
             time_stride=kwargs.get("time_stride", 1),
             buffer_length=buffer_length,
@@ -212,15 +225,8 @@ class Signal(Statistic):
 
     @classmethod
     def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
-        time_idxs = set()
-        if "random_heatmap_minmax" in kwargs:
-            _min, _max = kwargs["random_heatmap_minmax"]
-            time_idxs.update(set(range(_min, _max + 1)))
-        if "heatmap_time" in kwargs:
-            time_idxs.update(set(kwargs["heatmap_time"]))
-
         return cls(
-            time_idxs=sorted(list(time_idxs)),
+            time_idxs=get_time_idxs(kwargs),
             buffer_length=buffer_length,
             writepath=writepath,
             reduce_batch=True,
@@ -267,15 +273,8 @@ class Flow(Statistic):
 
     @classmethod
     def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
-        time_idxs = set()
-        if "random_heatmap_minmax" in kwargs:
-            _min, _max = kwargs["random_heatmap_minmax"]
-            time_idxs.update(set(range(_min, _max + 1)))
-        if "heatmap_time" in kwargs:
-            time_idxs.update(set(kwargs["heatmap_time"]))
-
         return cls(
-            time_idxs=sorted(list(time_idxs)),
+            time_idxs=get_time_idxs(kwargs),
             buffer_length=buffer_length,
             writepath=writepath,
             reduce_batch=True,
