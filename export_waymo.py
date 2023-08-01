@@ -160,12 +160,13 @@ def auto_evaluate(
 
     stime = time.perf_counter()
     for idx, run_hash in enumerate(need_update):
+        if (workspace / run_hash / "NO_EVAL").exists():
+            print(f"Skipping {run_hash} marked as NO EVAL")
+            continue  # Skip experiment if marked no eval
         try:
             print(emph(f"Running {run_hash}", Fore.BLUE))
             generate(workspace, run_hash, Mode.val)
             evaluate(workspace, run_hash, Mode.val)
-            if _clean:
-                clean(workspace / run_hash)
             print(
                 emph(
                     f"Updated {idx+1}/{len(need_update)} Experiments"
@@ -175,6 +176,8 @@ def auto_evaluate(
             )
         except Exception as err:
             print(emph(f"Skpping {run_hash} with error: {err}", Fore.RED))
+        if _clean:
+            clean(workspace / run_hash)
 
 
 if __name__ == "__main__":
