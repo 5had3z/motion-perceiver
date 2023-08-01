@@ -40,7 +40,9 @@ class EvalConfig:
 
 
 def scenairo_id_tensor_2_str(batch_ids: Tensor) -> List[str]:
-    return ["".join([chr(c) for c in id_chars]) for id_chars in batch_ids]
+    return [
+        "".join([chr(c) for c in id_chars]).rstrip("\x00") for id_chars in batch_ids
+    ]
 
 
 def apply_ts_text(ts: int, frame: np.ndarray, extra: str = "") -> np.ndarray:
@@ -234,7 +236,6 @@ def write_video_batch(
     data: Dict[str, Tensor],
     pred: Dict[str, Tensor],
     path: Path,
-    global_it: int,
     threshold: float | None = None,
     roadmap_scale: float = 1.0,
     time_stride: int = 1,
@@ -243,7 +244,6 @@ def write_video_batch(
     mpool = mp.Pool(processes=mp.cpu_count() // 2)
     bz = data["heatmap"].shape[0]
 
-    print("enqueuing occupancy videos")
     occ_path = path / "occupancy"
     occ_path.mkdir(parents=True, exist_ok=True)
 
@@ -251,6 +251,7 @@ def write_video_batch(
     signals_batch = (
         [data["signals"], data["signals_valid"].bool()] if "signals" in data else None
     )
+    scenario_names = scenairo_id_tensor_2_str(data["scenario_id"])
 
     for cls_idx, cls_name in enumerate(p for p in pred if "heatmap" in p):
         for b_idx, (sample, pred_cls, roadmap) in enumerate(
@@ -270,7 +271,7 @@ def write_video_batch(
                     pred=pred_cls.sigmoid().cpu().numpy(),
                     signals=signals,
                     roadmap=roadmap,
-                    path=occ_path / f"{cls_name}_occupancy_{global_it*bz + b_idx}.webm",
+                    path=occ_path / f"{scenario_names[b_idx]}_{cls_name}.webm",
                     roadmap_scale=roadmap_scale,
                     thresh=threshold,
                     time_stride=time_stride,
@@ -278,7 +279,6 @@ def write_video_batch(
             )
 
     if "flow" in pred:
-        print("enqueuing flow videos")
         flow_path = path / "flow"
         flow_path.mkdir(parents=True, exist_ok=True)
 
@@ -292,7 +292,7 @@ def write_video_batch(
                 pred_flow_sequence=p_flow.cpu().numpy(),
                 pred_occ_sequence=p_occ.sigmoid().cpu().numpy(),
                 truth_flow_sequence=t_flow.cpu().numpy(),
-                path=flow_path / f"flow_{global_it*bz + b_idx}.webm",
+                path=flow_path / f"{scenario_names[b_idx]}.webm",
                 mask_thresh=0.5,
                 # ),
             )
@@ -403,7 +403,6 @@ def statistic_evaluation(
                     data,
                     outputs,
                     config.path,
-                    pbar.n,
                     config.video_thresh,
                     config.roi_scale,
                     config.time_stride,
@@ -521,6 +520,7 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
         dataset_cfg.heatmap_time = list(range(0, 90 // dataset_cfg.time_stride + 1))
         dataset_cfg.filter_future = True
         dataset_cfg.waymo_eval_frame = True
+        dataset_cfg.scenario_id = True
     elif isinstance(dataset_cfg, InteractionConfig):
         dataset_cfg.heatmap_time = list(range(0, 40))
     else:
