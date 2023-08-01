@@ -67,10 +67,10 @@ def update_graph(metric: str, root_dir: str):
     Input("root-dir", "data"),
 )
 def update_table(table: str, root: str):
-    if any(f is None for f in [table, root]):
+    if not all([table, root]):
         raise PreventUpdate
 
-    perf_db = sqlite3.connect(Path(root) / "waymo_eval.db")
+    perf_db = sqlite3.connect(Path(root) / "results.db")
     perf = pd.read_sql_query(f"SELECT * FROM {table}", perf_db, index_col="hash")
     meta = pd.read_sql_query("SELECT * FROM metadata", perf_db, index_col="hash")
     perf_db.close()

@@ -86,7 +86,7 @@ def evaluate(
     )
 
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
-    with closing(get_db(workspace / "waymo_eval.db")) as con:
+    with closing(get_db(workspace)) as con:
         cur = con.cursor()
         upsert_eval(cur, run_hash, meta.epoch, pt_eval)
         upsert_eval(cur, run_hash, meta.epoch, tf_eval)
@@ -104,7 +104,7 @@ def update_metadata(workspace: Path):
             if metapath.exists():
                 yield metapath
 
-    with closing(get_db(workspace / "waymo_eval.db")) as con:
+    with closing(get_db(workspace)) as con:
         cur = con.cursor()
         for metaf in iterate_metadata():
             meta = Metadata.from_yaml(metaf)

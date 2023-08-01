@@ -34,18 +34,16 @@ class MetricData:
 
 def get_db(path: Path):
     """Return handle to db, adds base tables if it didn't previously exist"""
-    create_table = not path.exists()
-    con = sqlite3.connect(path)
+    con = sqlite3.connect(path / "results.db")
 
-    if create_table:
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS metadata (hash TEXT PRIMARY KEY, ts TIMESTAMP, desc TEXT, epoch INT)"
+    )
+    for table in ["pytorch", "tensorflow"]:
         con.execute(
-            "CREATE TABLE metadata (hash TEXT PRIMARY KEY, ts TIMESTAMP, desc TEXT, epoch INT)"
+            f"CREATE TABLE IF NOT EXISTS {table} (hash TEXT PRIMARY KEY, epoch INT, iou FLOAT, auc FLOAT)",
         )
-        for table in ["pytorch", "tensorflow"]:
-            con.execute(
-                f"CREATE TABLE {table} (hash TEXT PRIMARY KEY, epoch INT, iou FLOAT, auc FLOAT)",
-            )
-        con.commit()
+    con.commit()
 
     return con
 
@@ -71,7 +69,7 @@ def upsert_eval(cur: sqlite3.Cursor, run_hash: str, epoch: int, data: MetricData
 
 
 def find_outdated_runs(workspace: Path) -> List[str]:
-    con = sqlite3.connect(workspace / "waymo_eval.db")
+    con = sqlite3.connect(workspace / "results.db")
     meta = pd.read_sql_query("SELECT epoch, hash FROM metadata", con, index_col="hash")
     perf = pd.read_sql_query("SELECT epoch, hash FROM pytorch", con, index_col="hash")
     con.close()
