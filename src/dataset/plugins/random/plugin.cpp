@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 
 #include <algorithm>
+#include <ranges>
 #include <unordered_set>
 
 namespace randomop
@@ -8,16 +9,16 @@ namespace randomop
 using DaliTensor = dali::SampleView<dali::CPUBackend>;
 
 std::vector<int32_t> generateTimeIdxs(
-    const std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount)
+    const std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount, int64_t stride)
 {
-    // Create vector of candidates
-    std::vector<int64_t> randomIdxs(maxTime + 1 - minTime);
-    std::iota(randomIdxs.begin(), randomIdxs.end(), minTime);
-
-    // Remove if within the constant set
-    randomIdxs.erase(
-        std::remove_if(randomIdxs.begin(), randomIdxs.end(), [&](int64_t i) { return constTime.count(i) > 0; }),
-        randomIdxs.end());
+    // Create vector of candidates that aren't in the constant set according to range(min,max,stride)
+    // TODO: use std::views::to() when available instead of emplace_back
+    std::vector<int64_t> randomIdxs;
+    for (auto&& v : std::views::iota(minTime, maxTime + 1) | std::views::stride(stride)
+            | std::views::filter([&](auto i) { return constTime.count(i) == 0; }))
+    {
+        randomIdxs.emplace_back(v);
+    }
 
     // Randomly Shuffle
     std::shuffle(randomIdxs.begin(), randomIdxs.end(), std::mt19937{std::random_device{}()});
@@ -42,7 +43,7 @@ void MixedRandomGenerator<dali::CPUBackend>::RunImpl(dali::Workspace& ws)
 {
     auto& outputTensor = ws.Output<::dali::CPUBackend>(0);
     auto outputTensorType = outputTensor.type_info();
-    auto timeIdx = generateTimeIdxs(mConstValues, mMin, mMax, mCount);
+    auto timeIdx = generateTimeIdxs(mConstValues, mMin, mMax, mCount, mStride);
 
     for (int sampleId = 0; sampleId < ws.GetRequestedBatchSize(0); ++sampleId)
     {
@@ -63,4 +64,5 @@ DALI_SCHEMA(MixedRandomGenerator)
     .AddArg("always_sample", "Values to always sample", dali::DALIDataType::DALI_INT_VEC)
     .AddOptionalArg<int64_t>("min", "Minimum value of random sample", -1)
     .AddOptionalArg<int64_t>("max", "Maximum random value to sample", -1)
+    .AddOptionalArg<int64_t>("stride", "Stride to randomly sample from", 1)
     .AddOptionalArg<int64_t>("n_random", "Number of random values to sample", -1);

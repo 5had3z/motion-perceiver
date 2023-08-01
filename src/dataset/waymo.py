@@ -42,6 +42,8 @@ class WaymoDatasetConfig(DatasetConfig):
     separate_classes: bool = False
     random_heatmap_minmax: Tuple[int, int] | None = None
     random_heatmap_count: int = 0
+    random_heatmap_stride: int = 1
+    random_heatmap_piecewise: List[Dict[str, int]] = field(default_factory=list)
     roadmap_size: int | None = None
     only_vehicles: bool = False
     # How to scale the occupancy roi, whole image => 1, center crop => 0.5
@@ -90,6 +92,40 @@ class WaymoDatasetConfig(DatasetConfig):
 
         datapipe = waymo_motion_pipe(root, cfg=self, **kwargs)
         return datapipe, output_map, root.stem, -1
+
+
+def get_sample_idxs(cfg: WaymoDatasetConfig):
+    """Create the time idxs which the heatmap is randomly sampled from"""
+    if len(cfg.random_heatmap_piecewise) == 0:
+        rand_kwargs = {
+            "n_random": cfg.random_heatmap_count,
+            "stride": cfg.random_heatmap_stride,
+        }
+        if cfg.random_heatmap_count > 0:
+            assert cfg.random_heatmap_minmax is not None
+            rand_kwargs["min"] = cfg.random_heatmap_minmax[0]
+            rand_kwargs["max"] = cfg.random_heatmap_minmax[1]
+
+        time_idx = fn.mixed_random_generator(
+            always_sample=cfg.heatmap_time, **rand_kwargs
+        )
+    else:
+        # run input validation, piecewise should be in ascending order
+        for before, next in zip(
+            cfg.random_heatmap_piecewise, cfg.random_heatmap_piecewise[1:]
+        ):
+            assert before["max"] < next["min"]
+
+        time_idxs = []
+        for kwargs in cfg.random_heatmap_piecewise:
+            const_times = sorted(
+                [x for x in cfg.heatmap_time if kwargs["min"] <= x < kwargs["max"]]
+            )
+            time_idxs.append(
+                fn.mixed_random_generator(always_sample=const_times, **kwargs)
+            )
+        time_idx = fn.cat(*time_idxs, axis=0)
+    return time_idx
 
 
 @pipeline_def
@@ -420,15 +456,7 @@ def waymo_motion_pipe(
     # Add occupancy heatmap
     if cfg.occupancy_size > 0:
         # Time index sample generation
-        rand_kwargs = {"n_random": cfg.random_heatmap_count}
-        if cfg.random_heatmap_count > 0:
-            assert cfg.random_heatmap_minmax is not None
-            rand_kwargs["min"] = cfg.random_heatmap_minmax[0]
-            rand_kwargs["max"] = cfg.random_heatmap_minmax[1]
-
-        time_idx = fn.mixed_random_generator(
-            always_sample=cfg.heatmap_time, **rand_kwargs
-        )
+        time_idx = get_sample_idxs(cfg)
 
         # Conat all features
         data_all = fn.cat(

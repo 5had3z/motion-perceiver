@@ -59,8 +59,8 @@ def get_thumbnail(path: Path) -> np.ndarray:
     return cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 
 
-def add_thumbnail_to_grid(grid: List[dbc.Col], video_path: Path, n_col: int = 3):
-    """Adds thumbnail to grid with a width of n_col (infinite rows)"""
+def add_thumbnail_to_grid(grid: List[dbc.Col], video_path: Path):
+    """Adds thumbnail to grid"""
     img = get_thumbnail(video_path)
 
     grid.append(

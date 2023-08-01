@@ -626,6 +626,91 @@ class MotionEncoder3CtxDetach(MotionEncoder3Ctx):
         return out_latent
 
 
+class MotionEncoder2Phase(MotionEncoder3Ctx):
+    """In the past/current phase, consume all timestep data with stride 100ms,
+    In the future phase, only predict the target timesteps at stride 1s"""
+
+    def __init__(
+        self,
+        *args,
+        num_latent_channels: int,
+        num_self_attention_layers_per_block: int = 6,
+        num_cross_attention_heads: int = 4,
+        dropout: float = 0,
+        num_self_attention_heads: int = 4,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            *args,
+            num_self_attention_layers_per_block=num_self_attention_layers_per_block,
+            num_cross_attention_heads=num_cross_attention_heads,
+            dropout=dropout,
+            num_latent_channels=num_latent_channels,
+            num_self_attention_heads=num_self_attention_heads,
+            **kwargs,
+        )
+        self.forecast_layer = pio.self_attention_block(
+            num_layers=num_self_attention_layers_per_block,
+            num_channels=num_latent_channels,
+            num_heads=num_self_attention_heads,
+            dropout=dropout,
+        )
+
+    def forward(
+        self,
+        output_idx: Tensor,
+        agents: Tensor,
+        agents_mask: Tensor,
+        road: Tensor | None = None,
+        road_mask: Tensor | None = None,
+        signals: Tensor | None = None,
+        signals_mask: Tensor | None = None,
+    ) -> List[Tensor]:
+        """"""
+        x_latent: Tensor = einops.repeat(self.latent, "... -> b ...", b=agents.shape[1])
+
+        min_idx = min(self.input_indicies)
+        out_latent = []
+
+        if road is not None:
+            enc_road, road_mask = self.encode_road(road, road_mask)
+        else:
+            enc_road = None
+
+        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_latent = self.input_layer(x_latent, x_adapt, x_mask)
+
+        if min_idx in output_idx:
+            out_latent.append(x_latent)
+            if self.detach_latent and self.training:
+                x_latent = x_latent.detach().clone()
+
+        input_indicies = self.get_input_indicies()
+
+        proc_args = (agents, agents_mask, signals, signals_mask, enc_road, road_mask)
+
+        for t_idx in range(min_idx + 1, 11):
+            x_latent = self.process_timestep(
+                t_idx, input_indicies, x_latent, *proc_args
+            )
+            if t_idx in output_idx:
+                out_latent.append(x_latent)
+                if self.detach_latent and self.training:
+                    x_latent = x_latent.detach().clone()
+
+        max_idx = int(output_idx.max().item()) + 1
+        for t_idx in range(20, max_idx, 10):
+            x_latent = self.forecast_layer(x_latent)
+            if self.road_attn is not None:
+                x_latent = self.road_attn(x_latent, enc_road, road_mask)
+            if t_idx in output_idx:
+                out_latent.append(x_latent)
+                if self.detach_latent and self.training:
+                    x_latent = x_latent.detach().clone()
+
+        return out_latent
+
+
 class _CrossAttnWContext(nn.Module):
     """Allows to inject roadgraph features in the self
     attention after the cross-attention"""
@@ -993,6 +1078,7 @@ class MotionPerceiver(nn.Module):
             MotionEncoder3,
             MotionEncoder3Ctx,
             MotionEncoder3CtxDetach,
+            MotionEncoder2Phase,
         ][enc_version - 1](input_adapter=input_adapter, **encoder)
 
         # Setup Decoder
@@ -1176,7 +1262,7 @@ class MotionPercieverWSignals(MotionPerceiver):
             "agents": agents.moveaxis((2, 0), (0, 1)),
             "agents_mask": ~agents_valid.moveaxis((2, 0), (0, 1)).bool(),
             "signals": signals.moveaxis((2, 0), (0, 1)),
-            "signals_mask": ~signals_valid.transpose(0, 1).bool(),
+            "signals_mask": ~signals_valid.moveaxis((2, 0), (0, 1)).bool(),
         }
 
         if roadgraph is not None and roadgraph.size():

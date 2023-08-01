@@ -15,6 +15,7 @@ private:
     int64_t mCount{0};
     int64_t mMin{0};
     int64_t mMax{0};
+    int64_t mStride{1};
     std::set<int64_t> mConstValues{};
 
 public:
@@ -23,6 +24,7 @@ public:
         , mCount{std::max(spec.GetArgument<int64_t>("n_random"), 0L)} // Bug in DALI won't accept zero default
         , mMin{spec.GetArgument<int64_t>("min")}
         , mMax{spec.GetArgument<int64_t>("max")}
+        , mStride{spec.GetArgument<int64_t>("stride")}
     {
         for (auto&& elem : spec.GetRepeatedArgument<int64_t>("always_sample"))
         {

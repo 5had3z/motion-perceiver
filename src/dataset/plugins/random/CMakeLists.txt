@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21.3 FATAL_ERROR)
 
 add_library(dali_random SHARED plugin.cpp)
-target_compile_features(dali_random PRIVATE cxx_std_17 c_std_11)
+target_compile_features(dali_random PRIVATE cxx_std_23 c_std_11)
 
 target_compile_options(
     dali_random

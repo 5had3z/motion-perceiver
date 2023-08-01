@@ -2,23 +2,32 @@
 FROM ubuntu:22.04 AS opencv-build
 WORKDIR /opt/opencv
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip
+    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip ninja-build
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.7.0.zip && \
-    unzip opencv.zip && \
-    cmake -B build -S opencv-4.7.0 -DBUILD_LIST=imgproc
-RUN cd build && make -j$(nproc)
+    unzip opencv.zip   
+RUN cmake -B build -S opencv-4.7.0 -G Ninja -DBUILD_LIST=imgproc && \
+    cmake --build build --parallel
 
-FROM WITHHELD/konductor:pytorch-main
+FROM mu00120825.eng.monash.edu.au:5000/konductor:pytorch-main
+
+USER root
+# Add test toolchain for gcc-13
+RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common && \
+    add-apt-repository ppa:ubuntu-toolchain-r/test 
+
+# Install build tools
+RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ninja-build cmake libtbb-dev g++-13 gcc-13
 
 # Install OpenCV from compile container
-USER root
-RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake
 COPY --from=opencv-build /opt/opencv /opt/opencv
 RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
 
+# Install in dist-utils so not overwritten in /home/worker
 RUN pip3 install \
-    opencv-python-headless \
+    opencv-python-headless==4.7.0.68 \
     einops==0.6.0 \
     scipy==1.10.0
 
@@ -28,7 +37,11 @@ ARG COMMIT
 RUN [ ! -z "${COMMIT}" ]
 ENV COMMIT_SHA=${COMMIT}
 
-COPY --chown=worker:worker . /home/worker
-WORKDIR /home/worker
-RUN cd src/dataset/plugins && sh makeplugins.sh
 USER worker
+WORKDIR /home/worker
+
+COPY --chown=worker:worker . .
+RUN cd src/dataset/plugins && \
+    CC=/usr/bin/gcc-13 CXX=/usr/bin/g++-13 \
+    cmake -B build -G Ninja && \
+    cmake --build build --parallel
