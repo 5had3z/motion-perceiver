@@ -11,6 +11,9 @@ RUN cmake -B build -S opencv-4.7.0 -G Ninja -DBUILD_LIST=imgproc && \
 FROM mu00120825.eng.monash.edu.au:5000/konductor:pytorch-main
 
 USER root
+# Install OpenCV from compile container
+COPY --from=opencv-build /opt/opencv /opt/opencv
+
 # Add test toolchain for gcc-13
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common && \
@@ -21,8 +24,6 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ninja-build cmake libtbb-dev g++-13 gcc-13
 
-# Install OpenCV from compile container
-COPY --from=opencv-build /opt/opencv /opt/opencv
 RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
 
 # Install in dist-utils so not overwritten in /home/worker
