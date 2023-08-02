@@ -11,7 +11,6 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 import torch
-from tqdm.auto import tqdm
 from torch import Tensor, inference_mode
 from torchvision.utils import flow_to_image
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
@@ -428,19 +427,15 @@ def visualise_output_attention(
 
     def attn_hook(module, inputs, outputs: Tuple[Tensor, Tensor]) -> None:
         """Hook that grabs the attention map and writes to disk"""
-        print("hooking")
         _, attn = outputs
 
-        # norm_args = (None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-
         for bidx, data in enumerate(attn):
-            folder = config.path / f"sample_{bidx}"
-            if not folder.exists():
-                folder.mkdir()
-            for tkn_idx in range(data.shape[-1] // 4):
-                # img = cv2.normalize(
-                #     data[..., tkn_idx].view(256, 256).cpu().numpy(), *norm_args
-                # )
+            bfolder = config.path / f"sample_{bidx}"
+            bfolder.mkdir(exist_ok=True)
+            for tkn_idx in range(data.shape[-1]):
+                (bfolder / f"token_{tkn_idx}").mkdir(exist_ok=True)
+
+            for tkn_idx in range(data.shape[-1]):
                 img = (
                     (255.0 * data[..., tkn_idx].view(256, 256))
                     .to(torch.uint8)
@@ -448,8 +443,9 @@ def visualise_output_attention(
                     .numpy()
                 )
                 img = cv2.resize(img, (768, 768), interpolation=cv2.INTER_LINEAR)
-                t_idx = len([f for f in folder.glob(f"token_{tkn_idx}_*")])
-                cv2.imwrite(str(folder / f"token_{tkn_idx}_{t_idx:02}.png"), img)
+                tfolder = bfolder / f"token_{tkn_idx}"
+                t_idx = len(list(tfolder.iterdir()))
+                cv2.imwrite(str(tfolder / f"{t_idx:02}.png"), img)
 
         # np.savez_compressed(
         #     config.path / "attn",
@@ -462,7 +458,7 @@ def visualise_output_attention(
 
     for data in loader:
         data = data[0]
-        output = model(**data)
+        model(**data)
         break
 
 
@@ -521,6 +517,7 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
         dataset_cfg.filter_future = True
         dataset_cfg.waymo_eval_frame = True
         dataset_cfg.scenario_id = True
+        dataset_cfg.random_heatmap_piecewise.clear()  # Remove randomness
     elif isinstance(dataset_cfg, InteractionConfig):
         dataset_cfg.heatmap_time = list(range(0, 40))
     else:
