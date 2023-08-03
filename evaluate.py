@@ -30,10 +30,9 @@ from konductor.trainer.init import parser_add_common_args, cli_init_config
 class EvalConfig:
     path: Path
     batch_size: int
-    n_statistic: int = 1024
     n_videos: int = 128
-    video_thresh: Optional[float] = None
-    filter_ids: Optional[Set[str]] = None
+    video_thresh: float | None = None
+    filter_ids: Set[str] | None = None
     roi_scale: float = 1.0
     time_stride: int = 1
 
@@ -216,6 +215,11 @@ def write_occupancy_video(
             roadmap = roadmap[start:end, start:end]
         roadmap = cv2.resize(roadmap, video_shape, interpolation=cv2.INTER_NEAREST)
 
+    # Check if prediction is 2phase, if so squeeze ground truth
+    if pred.shape[0] == 19:
+        data[11:19] = data[20::10]
+        data = data[:19]
+
     for idx, (pred_frame, data_frame) in enumerate(zip(pred, data)):
         bgr_frame = create_occupancy_frame(data_frame, pred_frame, video_shape, thresh)
         if roadmap is not None:
@@ -307,32 +311,6 @@ def write_values(data: np.ndarray, path: Path) -> None:
             f.write(f"{elem}\n")
 
 
-def plot_statistic_time(logger: Occupancy, path: Path, input_times: List[int]) -> None:
-    assert logger.time_idxs is not None
-
-    perf_data = logger.iteration_mean(0)
-
-    for statistic in ["IoU", "AUC"]:
-        plt.figure(statistic, figsize=(8, 4))
-        plt.ylim((0, 1))
-        plt.xlim((-1, len(logger.time_idxs)))
-        plt.vlines(input_times, 0, 1, colors="green", label="observations", lw=5)
-        plt.vlines(10, 0, 1, linestyles="dotted", colors="red", label="t=0", lw=5)
-
-        data = np.empty(len(logger.time_idxs))
-        for idx, time_idx in enumerate(logger.time_idxs):
-            data[idx] = perf_data[f"{statistic}_{time_idx}"]
-        plt.plot(data, lw=4)
-
-        write_values(data, path / f"{statistic}.csv")
-
-        plt.title(statistic)
-        plt.xlabel("Time index (100ms inc)")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(path / f"{statistic}_over_sequence.png")
-
-
 def gather_dict(meta_batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     ret_dict = {}
     for key in meta_batch[0]:
@@ -365,31 +343,17 @@ def yield_filtered_batch(dataloader, filter_ids: Set[str], batch_size: int):
 def statistic_evaluation(
     model: MotionPerceiver,
     loader: DALIGenericIterator,
-    logger: Occupancy,
     config: EvalConfig,
 ) -> None:
     """"""
-    max_samples = max(config.n_videos, config.n_statistic)
-    # if not set run over whole dataset for statistics
-    # if we're using the filter_ids, run over that dataset
-    if max_samples == 0 or config.filter_ids is not None:
-        max_samples = (
-            len(loader) * config.batch_size
-            if config.filter_ids is None
-            else len(config.filter_ids)
-        )
-        config.n_statistic = max_samples
-
-    # save now as it'll be lost after jit
-    input_indicies = list(model.encoder.input_indicies)
 
     if config.filter_ids is not None:
         loader = yield_filtered_batch(loader, config.filter_ids, config.batch_size)
 
-    with LivePbar(total=max_samples // config.batch_size) as pbar:
+    with LivePbar(total=config.n_videos // config.batch_size) as pbar:
         for data in loader:
             n_samples = pbar.n * config.batch_size
-            if n_samples >= max_samples:
+            if n_samples >= config.n_videos:
                 break
 
             data: Dict[str, Tensor] = data[0]  # remove list dimension
@@ -397,24 +361,16 @@ def statistic_evaluation(
             for key in outputs:
                 outputs[key][outputs[key] < 0] *= 8.0
 
-            if n_samples < config.n_videos:
-                write_video_batch(
-                    data,
-                    outputs,
-                    config.path,
-                    config.video_thresh,
-                    config.roi_scale,
-                    config.time_stride,
-                )
-
-            if n_samples < config.n_statistic:
-                logger(0, outputs, data)
+            write_video_batch(
+                data,
+                outputs,
+                config.path,
+                config.video_thresh,
+                config.roi_scale,
+                config.time_stride,
+            )
 
             pbar.update(1)
-
-    if config.n_statistic > 0:
-        logger.flush()
-        plot_statistic_time(logger, config.path, input_indicies)
 
 
 def visualise_output_attention(
@@ -465,7 +421,6 @@ def visualise_output_attention(
 def add_eval_args(parser: argparse.ArgumentParser) -> None:
     """Add additonal evaluation settings to parser"""
     parser.add_argument("--n_videos", type=int, default=128)
-    parser.add_argument("--n_statistic", type=int, default=1024)
     parser.add_argument("--video_thresh", type=float)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument(
@@ -478,7 +433,7 @@ def add_eval_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalConfig]:
+def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, EvalConfig]:
     """Initalise eval for motion perciever"""
     parser = argparse.ArgumentParser()
     parser_add_common_args(parser)
@@ -543,7 +498,6 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
     eval_config = EvalConfig(
         exp_cfg.work_dir / exp_cfg.data[0].dataset.type,
         args.batch_size,
-        args.n_statistic,
         args.n_videos,
         thresh,
         filter_ids,
@@ -551,11 +505,7 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, Occupancy, EvalC
         dataset_cfg.time_stride,
     )
 
-    logger = Occupancy.from_config(
-        1000, eval_config.path / "occupancy.parquet", **dataset_cfg.properties
-    )
-
-    return model, dataloader, logger, eval_config
+    return model, dataloader, eval_config
 
 
 @inference_mode()
@@ -563,7 +513,7 @@ def main() -> None:
     """"""
     args = initialize()
     statistic_evaluation(*args)
-    # visualise_output_attention(args[0], args[1], args[3])
+    # visualise_output_attention(*args)
 
 
 if __name__ == "__main__":
