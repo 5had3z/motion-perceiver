@@ -40,7 +40,10 @@ def main():
         train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         val_loader=ModuleInitConfig(
             type="dali",
-            args={"batch_size": batch_size, "augmentations": {"random_rotate": {}}},
+            args={
+                "batch_size": batch_size,
+                "augmentations": [ModuleInitConfig("random_rotate", {})],
+            },
         ),
         full_sequence=True,
         map_normalize=80.0,

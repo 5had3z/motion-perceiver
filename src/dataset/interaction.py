@@ -6,7 +6,7 @@ from subprocess import run
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from konductor.data import DATASET_REGISTRY, Mode
+from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
 from nvidia.dali import pipeline_def, Pipeline, newaxis
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
@@ -67,9 +67,9 @@ def interation_pipeline(
     num_shards: int,
     random_shuffle: bool,
     cfg: InteractionConfig,
-    augmentations: Dict[str, Any],
+    augmentations: List[ModuleInitConfig],
 ):
-    assert all(a in VALID_AUG for a in augmentations)
+    assert all(a.type in VALID_AUG for a in augmentations)
     # fmt: off
     # Features of the road.
     roadgraph_features = {
@@ -125,7 +125,7 @@ def interation_pipeline(
             fn.masked_median(inputs["state/y"], data_valid),
         )
     )
-    if "random_rotate" in augmentations:
+    if any(a.type == "random_rotate" for a in augmentations):
         angle_rad = fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
     else:
         angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)

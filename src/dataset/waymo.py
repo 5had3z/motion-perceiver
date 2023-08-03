@@ -11,7 +11,7 @@ from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
-from konductor.data import DATASET_REGISTRY, Mode
+from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
 
 from .common import (
     get_cache_record_idx_path,
@@ -78,12 +78,12 @@ def waymo_motion_pipe(
     num_shards: int,
     random_shuffle: bool,
     cfg: WaymoDatasetConfig,
-    augmentations: Dict[str, Any],
+    augmentations: List[ModuleInitConfig],
 ):
     """Waymo data should be split in separate folders
     training/validation/testing. Therefore we should be able
     to determine the split by the folder name"""
-    assert all(a in VALID_AUG for a in augmentations)
+    assert all(a.type in VALID_AUG for a in augmentations)
 
     # fmt: off
     # Features of the road.
@@ -230,7 +230,7 @@ def waymo_motion_pipe(
         )
         angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
 
-    if "random_rotate" in augmentations:
+    if any(a.type == "random_rotate" for a in augmentations):
         angle_rad += fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
 
     rot_mat = fn.transforms.rotation(
