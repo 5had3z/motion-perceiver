@@ -1,12 +1,12 @@
 """Dataset for the INTERACTION dataset that consists of folders of CSVs
 """
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from subprocess import run
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from konductor.data import DATASET_REGISTRY, DatasetConfig, Mode
+from konductor.data import DATASET_REGISTRY, Mode
 from nvidia.dali import pipeline_def, Pipeline, newaxis
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
@@ -14,17 +14,22 @@ import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
 
 try:
-    from .utils import get_cache_record_idx_path
+    from .common import (
+        get_cache_record_idx_path,
+        MotionDatasetConfig,
+        get_sample_idxs,
+        VALID_AUG,
+        dali_rad2deg,
+    )
 except ImportError:
-    from utils import get_cache_record_idx_path
+    from common import (
+        get_cache_record_idx_path,
+        MotionDatasetConfig,
+        get_sample_idxs,
+        VALID_AUG,
+        dali_rad2deg,
+    )
 
-# fmt: off
-_ALL_FEATURES = [
-    "x", "y", "bbox_yaw",
-    "velocity_x", "velocity_y", "vel_yaw",
-    "width", "length", "class"
-]
-# fmt: on
 
 _MAX_AGENTS: int = 64
 _MAX_ROADGRAPH: int = 1024
@@ -33,35 +38,14 @@ _TIMESPAN: int = 40
 
 @dataclass
 @DATASET_REGISTRY.register_module("interacton")
-class InteractionConfig(DatasetConfig):
-    occupancy_size: int = field(kw_only=True)
-    full_sequence: bool = False
-    # Vehicle_features is order sensitive (this is ordering of channel concatenation)
-    vehicle_features: List[str] = field(default_factory=lambda: _ALL_FEATURES)
-    road_features: bool = False
-    roadmap: bool = False
-    roadmap_size: int | None = None
-    only_vehicles: bool = False
-    signal_features: bool = False
-    map_normalize: float = 0.0
-    heatmap_time: List[int] | None = None
-    filter_future: bool = True
-    separate_classes: bool = False
-    random_heatmap_minmax: Tuple[int, int] | None = None
-    random_heatmap_count: int = 0
-    # How to scale the occupancy roi, whole image => 1, center crop => 0.5
-    occupancy_roi: float = 1.0
-    flow_mask: bool = False
-    velocity_norm: float = 1.0
-    time_stride: int = 1
-    random_start: bool = False
-
+class InteractionConfig(MotionDatasetConfig):
     @property
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
     def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        assert not self.signal_features, "Signal features unavailable for interaction"
+        if self.scenario_id:
+            raise NotImplementedError("Scenario ID currently not embedded in data")
         tfrec_file = self.basepath / f"interaction_{mode.name}.tfrecord"
 
         output_map = ["agents", "agents_valid"]
@@ -85,6 +69,7 @@ def interation_pipeline(
     cfg: InteractionConfig,
     augmentations: Dict[str, Any],
 ):
+    assert all(a in VALID_AUG for a in augmentations)
     # fmt: off
     # Features of the road.
     roadgraph_features = {
@@ -141,12 +126,11 @@ def interation_pipeline(
         )
     )
     if "random_rotate" in augmentations:
-        rot_mat = fn.transforms.rotation(
-            angle=fn.random_uniform(range=[-180, 180], dtype=DALIDataType.FLOAT)
-        )
+        angle_rad = fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
     else:
-        rot_mat = fn.transforms.rotation(angle=0)
+        angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
 
+    rot_mat = fn.transforms.rotation(angle=dali_rad2deg(angle_rad))
     xy_tf = fn.transforms.combine(center, rot_mat)
 
     # Transform XY
@@ -178,7 +162,7 @@ def interation_pipeline(
         )
 
     # Normalize angle between [-1,1]
-    data_yaw = inputs["state/t"][:, :, newaxis]
+    data_yaw = inputs["state/t"][:, :, newaxis] + angle_rad
     data_yaw = dmath.atan2(dmath.sin(data_yaw), dmath.cos(data_yaw)) / Constant(
         np.pi, dtype=DALIDataType.FLOAT
     )
@@ -190,8 +174,6 @@ def interation_pipeline(
     # Create class vector
     data_class = fn.cast(inputs["state/type"], dtype=DALIDataType.FLOAT)
     data_class = fn.stack(*[data_class] * _TIMESPAN if cfg.full_sequence else 1, axis=1)
-    if cfg.only_vehicles:
-        data_valid *= data_class == 1
     data_class = data_class[:, :, newaxis]
 
     data_out = [data_xy]
@@ -228,15 +210,7 @@ def interation_pipeline(
 
     # Add occupancy heatmap
     if cfg.occupancy_size > 0:
-        rand_kwargs = {"n_random": cfg.random_heatmap_count}
-        if cfg.random_heatmap_count > 0:
-            assert cfg.random_heatmap_minmax is not None
-            rand_kwargs["min"] = cfg.random_heatmap_minmax[0]
-            rand_kwargs["max"] = cfg.random_heatmap_minmax[1]
-
-        time_idx = fn.mixed_random_generator(
-            always_sample=cfg.heatmap_time, **rand_kwargs
-        )
+        time_idx = get_sample_idxs(cfg)
 
         # Concat all features
         data_all = fn.cat(
@@ -250,7 +224,7 @@ def interation_pipeline(
             "size": cfg.occupancy_size,
             "roi": cfg.occupancy_roi,
             "filter_future": cfg.filter_future,
-            "separate_classes": cfg.separate_classes,
+            "separate_classes": False,
         }
 
         outputs.append(time_idx)

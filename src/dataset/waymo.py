@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from subprocess import run
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
@@ -11,49 +11,26 @@ from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
-from konductor.data import DATASET_REGISTRY, DatasetConfig, Mode
+from konductor.data import DATASET_REGISTRY, Mode
 
-from .utils import get_cache_record_idx_path
+from .common import (
+    get_cache_record_idx_path,
+    MotionDatasetConfig,
+    get_sample_idxs,
+    VALID_AUG,
+    dali_rad2deg,
+)
 
-
-# fmt: off
-_ALL_FEATURES = [
-    "x", "y", "bbox_yaw",
-    "velocity_x", "velocity_y", "vel_yaw",
-    "width", "length", "class"
-]
-# fmt: on
 
 _TIME_KEYS = ["past", "current", "future"]
 
 
 @dataclass
 @DATASET_REGISTRY.register_module("waymo_motion")
-class WaymoDatasetConfig(DatasetConfig):
-    occupancy_size: int = field(kw_only=True)
-    full_sequence: bool = False
-    # Vehicle_features is order sensitive (this is ordering of channel concatenation)
-    vehicle_features: List[str] = field(default_factory=lambda: _ALL_FEATURES)
-    roadmap: bool = False
+class WaymoDatasetConfig(MotionDatasetConfig):
     signal_features: bool = False
-    map_normalize: float = 0.0
-    heatmap_time: List[int] | None = None
-    filter_future: bool = False
     separate_classes: bool = False
-    random_heatmap_minmax: Tuple[int, int] | None = None
-    random_heatmap_count: int = 0
-    random_heatmap_stride: int = 1
-    random_heatmap_piecewise: List[Dict[str, int]] = field(default_factory=list)
-    roadmap_size: int | None = None
     only_vehicles: bool = False
-    # How to scale the occupancy roi, whole image => 1, center crop => 0.5
-    occupancy_roi: float = 1.0
-    flow_mask: bool = False
-    velocity_norm: float = 1.0
-    time_stride: int = 1
-    random_start: bool = False
-
-    # Waymo Motion Specific
     scenario_id: bool = False
     use_sdc_frame: bool = False
     waymo_eval_frame: bool = False
@@ -94,40 +71,6 @@ class WaymoDatasetConfig(DatasetConfig):
         return datapipe, output_map, root.stem, -1
 
 
-def get_sample_idxs(cfg: WaymoDatasetConfig):
-    """Create the time idxs which the heatmap is randomly sampled from"""
-    if len(cfg.random_heatmap_piecewise) == 0:
-        rand_kwargs = {
-            "n_random": cfg.random_heatmap_count,
-            "stride": cfg.random_heatmap_stride,
-        }
-        if cfg.random_heatmap_count > 0:
-            assert cfg.random_heatmap_minmax is not None
-            rand_kwargs["min"] = cfg.random_heatmap_minmax[0]
-            rand_kwargs["max"] = cfg.random_heatmap_minmax[1]
-
-        time_idx = fn.mixed_random_generator(
-            always_sample=cfg.heatmap_time, **rand_kwargs
-        )
-    else:
-        # run input validation, piecewise should be in ascending order
-        for before, next in zip(
-            cfg.random_heatmap_piecewise, cfg.random_heatmap_piecewise[1:]
-        ):
-            assert before["max"] < next["min"]
-
-        time_idxs = []
-        for kwargs in cfg.random_heatmap_piecewise:
-            const_times = sorted(
-                [x for x in cfg.heatmap_time if kwargs["min"] <= x < kwargs["max"]]
-            )
-            time_idxs.append(
-                fn.mixed_random_generator(always_sample=const_times, **kwargs)
-            )
-        time_idx = fn.cat(*time_idxs, axis=0)
-    return time_idx
-
-
 @pipeline_def
 def waymo_motion_pipe(
     record_root: Path,
@@ -140,6 +83,7 @@ def waymo_motion_pipe(
     """Waymo data should be split in separate folders
     training/validation/testing. Therefore we should be able
     to determine the split by the folder name"""
+    assert all(a in VALID_AUG for a in augmentations)
 
     # fmt: off
     # Features of the road.
@@ -277,11 +221,6 @@ def waymo_motion_pipe(
         angle_rad = Constant(math.pi / 2, dtype=DALIDataType.FLOAT) - fn.masked_median(
             inputs["state/current/bbox_yaw"], sdc_mask
         )
-        angle_deg = (
-            Constant(180, dtype=DALIDataType.FLOAT)
-            * angle_rad
-            / Constant(np.pi, dtype=DALIDataType.FLOAT)
-        )
     else:  #  Center system based on median agent position
         center = fn.transforms.translation(
             offset=-fn.cat(
@@ -290,17 +229,21 @@ def waymo_motion_pipe(
             )
         )
         angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
-        angle_deg = angle_rad
 
-    rot_mat = fn.transforms.rotation(angle=fn.reshape(angle_deg, shape=[]))
+    if "random_rotate" in augmentations:
+        angle_rad += fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
 
-    if cfg.waymo_eval_frame:
-        # Flip y and move down 20m
-        final_tf = np.array([[1, 0, 0], [0, -1, 20]], dtype=np.float32)
-    else:
-        final_tf = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float32)
+    rot_mat = fn.transforms.rotation(
+        angle=fn.reshape(dali_rad2deg(angle_rad), shape=[])
+    )
 
-    xy_tf = fn.transforms.combine(center, rot_mat, final_tf)
+    xy_tf_list = [center, rot_mat]
+    if cfg.waymo_eval_frame:  # Flip y and move down 20m
+        assert (
+            "random_rotate" not in augmentations
+        ), "Can't be in eval frame if using augmentations"
+        xy_tf_list.append(np.array([[1, 0, 0], [0, -1, 20]], dtype=np.float32))
+    xy_tf = fn.transforms.combine(*xy_tf_list)
 
     # Transform XY
     data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=xy_tf)
