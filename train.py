@@ -3,12 +3,13 @@
 from argparse import Namespace as NS
 import logging
 from typing import Tuple, Dict, List, Type
+from functools import partial
 
 import torch
 from torch import Tensor
 from torch.profiler import record_function
 from konductor.utilities import comm
-from konductor.utilities.pbar import pbar_wrapper
+from konductor.utilities.pbar import pbar_wrapper, PbarType
 from konductor.trainer.init import get_training_parser, init_training, cli_init_config
 from konductor.trainer.pytorch import (
     PyTorchTrainer,
@@ -71,6 +72,11 @@ def setup(cli_args: NS) -> Trainer:
     exp_config = cli_init_config(cli_args)
     if cli_args.pbar:
         exp_config.trainer_kwargs["pbar"] = pbar_wrapper
+    else:
+        exp_config.trainer_kwargs["pbar"] = partial(
+            pbar_wrapper, pbar_type=PbarType.INTERVAL, fraction=0.1
+        )
+
     trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
 
     statistics: Dict[str, Type[Statistic]] = {"occupancy": src.statistics.Occupancy}
