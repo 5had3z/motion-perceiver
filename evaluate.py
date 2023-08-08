@@ -340,7 +340,7 @@ def yield_filtered_batch(dataloader, filter_ids: Set[str], batch_size: int):
         yield [gather_dict(meta_batch)]
 
 
-def statistic_evaluation(
+def generate_videos(
     model: MotionPerceiver,
     loader: DALIGenericIterator,
     config: EvalConfig,
@@ -512,7 +512,7 @@ def initialize() -> Tuple[MotionPerceiver, DALIGenericIterator, EvalConfig]:
 def main() -> None:
     """"""
     args = initialize()
-    statistic_evaluation(*args)
+    generate_videos(*args)
     # visualise_output_attention(*args)
 
 

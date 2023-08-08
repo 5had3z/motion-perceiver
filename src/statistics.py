@@ -241,7 +241,7 @@ class Signal(Statistic):
 
         # Add Statistic Keys and dummy buffer
         for key in data_keys:
-            self._statistics[key] = np.empty(0)
+            self._statistics[key] = np.empty(self._buffer_length)
 
         self.reset()
 
@@ -291,7 +291,7 @@ class Flow(Statistic):
 
         # Add Statistic Keys and dummy buffer
         for key in data_keys:
-            self._statistics[key] = np.empty(0)
+            self._statistics[key] = np.empty(self._buffer_length)
 
         self.reset()
 
