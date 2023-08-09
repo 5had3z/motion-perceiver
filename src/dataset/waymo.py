@@ -34,6 +34,7 @@ class WaymoDatasetConfig(MotionDatasetConfig):
     scenario_id: bool = False
     use_sdc_frame: bool = False
     waymo_eval_frame: bool = False
+    sdc_index: bool = False
 
     @property
     def properties(self) -> Dict[str, Any]:
@@ -66,6 +67,8 @@ class WaymoDatasetConfig(MotionDatasetConfig):
             output_map.append("flow")
         if self.scenario_id:
             output_map.append("scenario_id")
+        if self.sdc_index:
+            output_map.append("sdc_mask")
 
         datapipe = waymo_motion_pipe(root, cfg=self, **kwargs)
         return datapipe, output_map, root.stem, -1
@@ -428,5 +431,8 @@ def waymo_motion_pipe(
         # Add padding since scenario_id contains <=16 characters
         scenario_pad = fn.pad(inputs["scenario/id"], fill_value=0)
         outputs.append(scenario_pad)
+
+    if cfg.sdc_index:
+        outputs.append(fn.cast(inputs["state/is_sdc"], dtype=DALIDataType.INT32))
 
     return tuple(outputs)

@@ -12,7 +12,7 @@ from konductor.utilities.pbar import LivePbar
 
 from src.model.motion_perceiver import MotionPerceiver
 from src.dataset.waymo import WaymoDatasetConfig
-from evaluate import yield_filtered_batch
+from make_video import yield_filtered_batch
 
 
 def scenairo_id_tensor_2_str(batch_ids: Tensor):
