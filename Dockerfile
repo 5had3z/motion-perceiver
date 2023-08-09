@@ -30,7 +30,8 @@ RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
 RUN pip3 install \
     opencv-python-headless==4.7.0.68 \
     einops==0.6.0 \
-    scipy==1.10.0
+    scipy==1.10.0 \ 
+    git+https://github.com/rtqichen/torchdiffeq.git@7265eb764e97cc485ec2d8fcbd87b4b95ca416e8
 
 # COMMIT arg is Required for training tracking purposes
 # Use --build-arg COMMIT="$(git rev-parse --short HEAD)"

@@ -5,6 +5,7 @@ from functools import reduce
 
 import einops
 import torch
+from torchdiffeq import odeint
 from torch import nn, Tensor
 
 from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA, RasterEncoder
@@ -1061,6 +1062,117 @@ class MotionEncoderParallel(nn.Module):
         return out_latent
 
 
+class OdePropagateLayer(nn.Module):
+    def __init__(self, latent_dim: int, expansion: float, n_groups: int = 16) -> None:
+        super().__init__()
+        hidden_dim = int(latent_dim * expansion)
+        self.pre_norm = nn.LayerNorm(latent_dim)
+        self.func = nn.Sequential(
+            nn.Linear(latent_dim + 1, hidden_dim),
+            nn.ReLU(True),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, latent_dim),
+        )
+
+    def forward(self, t: Tensor, latent: Tensor) -> Tensor:
+        latent = self.pre_norm(latent)
+        latent = torch.cat([latent, t.expand_as(latent[..., :1])], dim=-1)
+        latent = self.func(latent)
+        return latent
+
+
+class MotionEncoderODE(MotionEncoder3Ctx):
+    def __init__(self, *args, ode_expansion: float = 2.0, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.ode_prop = OdePropagateLayer(self.latent_dim, ode_expansion)
+
+    def _get_waypoints(self, output_idx: Tensor) -> List[int]:
+        time_points = self.input_indicies.union({int(t.item()) for t in output_idx})
+        return sorted(list(time_points))
+
+    def process_timestep(
+        self,
+        pidx: int,
+        tidx: int,
+        input_times: Set[int],
+        latent: Tensor,
+        agents: Tensor,
+        agents_mask: Tensor,
+        signals: Tensor | None,
+        signals_mask: Tensor | None,
+        road: Tensor | None,
+        road_mask: Tensor | None,
+    ) -> Tensor:
+        latent = self.propagate_layer(latent)
+        diff_time = torch.tensor(
+            [0, tidx - pidx], dtype=latent.dtype, device=latent.device
+        )
+        latent = (
+            latent + odeint(self.ode_prop, latent, diff_time, rtol=1e-3, atol=1e-3)[1]
+        )
+
+        if tidx in input_times:
+            x_adapt, x_mask = self.input_adapter(agents[tidx], agents_mask[tidx])
+            latent = self.update_layer(latent, x_adapt, x_mask)
+
+            if self.signal_encoder is not None:
+                s_adapt, s_mask = self.signal_encoder(signals[tidx], signals_mask[tidx])
+                latent = self.signal_attn(latent, s_adapt, s_mask)
+
+        if self.road_attn is not None:
+            latent = self.road_attn(latent, road, road_mask)
+
+        return latent
+
+    def forward(
+        self,
+        output_idx: Tensor,
+        agents: Tensor,
+        agents_mask: Tensor,
+        road: Tensor | None = None,
+        road_mask: Tensor | None = None,
+        signals: Tensor | None = None,
+        signals_mask: Tensor | None = None,
+    ) -> List[Tensor]:
+        """"""
+        x_latent: Tensor = einops.repeat(self.latent, "... -> b ...", b=agents.shape[1])
+
+        min_idx = min(self.input_indicies)
+        out_latent = []
+
+        if road is not None:
+            enc_road, road_mask = self.encode_road(road, road_mask)
+        else:
+            enc_road = None
+
+        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_latent = self.input_layer(x_latent, x_adapt, x_mask)
+
+        if min_idx in output_idx:
+            out_latent.append(x_latent)
+            if self.detach_latent and self.training:
+                x_latent = x_latent.detach().clone()
+
+        input_indicies = self.get_input_indicies()
+
+        proc_args = (agents, agents_mask, signals, signals_mask, enc_road, road_mask)
+
+        waypoints = self._get_waypoints(output_idx)
+        for p_idx, c_idx in zip(waypoints, waypoints[1:]):
+            x_latent = self.process_timestep(
+                p_idx, c_idx, input_indicies, x_latent, *proc_args
+            )
+            if c_idx in output_idx:
+                out_latent.append(x_latent)
+                if self.detach_latent and self.training:
+                    x_latent = x_latent.detach().clone()
+
+        return out_latent
+
+
 class MotionPerceiver(nn.Module):
     def __init__(self, encoder: Dict[str, Any], decoder: Dict[str, Any]) -> None:
         super().__init__()
@@ -1080,6 +1192,7 @@ class MotionPerceiver(nn.Module):
             MotionEncoder3Ctx,
             MotionEncoder3CtxDetach,
             MotionEncoder2Phase,
+            MotionEncoderODE,
         ][enc_version - 1](input_adapter=input_adapter, **encoder)
 
         # Setup Decoder
