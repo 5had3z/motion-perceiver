@@ -9,7 +9,6 @@ import multiprocessing as mp
 
 import cv2
 import numpy as np
-from matplotlib import pyplot as plt
 import torch
 from torch import Tensor, inference_mode
 from torchvision.utils import flow_to_image
@@ -17,7 +16,6 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 from src.dataset.waymo import WaymoDatasetConfig
 from src.dataset.interaction import InteractionConfig
-from src.statistics import Occupancy
 from src.model import MotionPerceiver
 
 from konductor.utilities.pbar import LivePbar
@@ -99,6 +97,11 @@ def write_flow_video(
 
     if not v_writer.isOpened():
         raise RuntimeError(f"Can't write video, writer not open: {path}")
+
+    # Check if prediction is 2phase, if so squeeze ground truth
+    if pred_flow_sequence.shape[1] == 19:
+        truth_flow_sequence[:, 11:19] = truth_flow_sequence[:, 20::10]
+        truth_flow_sequence = truth_flow_sequence[:, :19]
 
     for idx in range(pred_flow_sequence.shape[1]):
         rgb_frame = create_flow_frame(
