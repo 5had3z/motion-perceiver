@@ -1,31 +1,14 @@
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Set
 from pathlib import Path
 
 import numpy as np
 import torch
 from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
-from konductor.data import get_dataloader, get_dataset_config
-from konductor.models import get_model
-from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar
 
 from src.model.motion_perceiver import MotionPerceiver
-from src.dataset.waymo import WaymoDatasetConfig
-from make_video import yield_filtered_batch
-
-
-def scenairo_id_tensor_2_str(batch_ids: Tensor):
-    scenario_str = []
-    for id_char in batch_ids:
-        scenario_str.append("".join([chr(c) for c in id_char]))
-    return scenario_str
-
-
-def scenario_id_mask(batch_ids: List[str], valid_scenarios: Set[str]) -> Tensor:
-    """Batch of scenario ids are checked if they are valid, mask is returned"""
-    mask = [id_str in valid_scenarios for id_str in batch_ids]
-    return torch.as_tensor(mask, dtype=torch.bool)
+from .eval_common import yield_filtered_batch
 
 
 @torch.inference_mode()
@@ -58,29 +41,3 @@ def run_export(
     with LivePbar(total=len(scenario_ids), desc="Exporting") as pbar:
         for batch in yield_filtered_batch(dataloader, scenario_ids, batch_size):
             pbar.update(inference(model, batch[0], pred_path, gt_path))
-
-
-def initialize(
-    exp_cfg: ExperimentInitConfig, split: str
-) -> Tuple[MotionPerceiver, DALIGenericIterator]:
-    """Initialise model and dataloader for prediction export"""
-    data_cfg: WaymoDatasetConfig = get_dataset_config(exp_cfg)
-    data_cfg.filter_future = True
-    data_cfg.scenario_id = True
-    data_cfg.use_sdc_frame = True
-    data_cfg.waymo_eval_frame = True
-    data_cfg.only_vehicles = True
-    data_cfg.val_loader.args["batch_size"] = 1
-    data_cfg.random_heatmap_count = 0
-    data_cfg.heatmap_time = list(range(20, 91, 10))  # Standard eval timesteps
-    data_cfg.heatmap_time = [t // data_cfg.time_stride for t in data_cfg.heatmap_time]
-    data_cfg.random_heatmap_piecewise.clear()  # Ensure piecewise random is cleared
-
-    model: MotionPerceiver = get_model(exp_cfg).cuda()
-    ckpt = torch.load(
-        exp_cfg.work_dir / "latest.pt",
-        map_location=f"cuda:{torch.cuda.current_device()}",
-    )["model"]
-    model.load_state_dict(ckpt)
-
-    return model.eval(), get_dataloader(data_cfg, split)
