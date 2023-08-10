@@ -54,8 +54,12 @@ def init_exp(root_dir: str):
 def get_thumbnail(path: Path) -> np.ndarray:
     """Reads video and returns first frame"""
     vid = cv2.VideoCapture(str(path))
-    _, im = vid.read()
+    ok, im = vid.read()
     vid.release()
+
+    if not ok:  # Black thumbnail if unable to read video
+        im = np.zeros((200, 200, 3), dtype=np.uint8)
+
     return cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 
 
@@ -109,5 +113,4 @@ def select_video(nclicks, experiment, url):
     exp = next(e for e in EXPERIMENTS if e.name == experiment)
     vidpath = next(exp.root.glob(f"**/{ctx.triggered_id['index']}.webm"))
     relpath = Path(exp.root.stem) / vidpath.relative_to(exp.root)
-    print(relpath)
     return f"{url}/{relpath}", True
