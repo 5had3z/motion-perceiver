@@ -49,12 +49,13 @@ def generate(
     """
     Export pytorch predictions to folder of numpy files
     """
-    from konductor.trainer.init import get_experiment_cfg, add_workers_to_dataloader
+    from konductor.trainer.init import get_experiment_cfg
     from utils.eval_common import initialize
     from utils.export_torch import run_export
 
     exp_cfg = get_experiment_cfg(workspace, None, run_hash)
-    add_workers_to_dataloader(exp_cfg, workers)
+    exp_cfg.set_workers(workers)
+    exp_cfg.set_batch_size(batch_size, split.name)
 
     with open(get_id_path(split.name), "r", encoding="utf-8") as f:
         scenario_ids = set([l.strip() for l in f.readlines()])

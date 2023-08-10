@@ -512,6 +512,6 @@ class RasterEncoder(InputAdapter):
         x = einops.rearrange(x, "b c ... -> b (...) c")
 
         # repeat position encoding along batch dimension
-        x_enc = einops.repeat(self.position_encoding, "... -> b ...", b=raster.shape[0])
-        x_cat = torch.cat([x, x_enc], dim=-1)
-        return x_cat
+        x_pos = einops.repeat(self.position_encoding, "... -> b ...", b=raster.shape[0])
+        x_enc = torch.cat([x, x_pos], dim=-1)
+        return x_enc

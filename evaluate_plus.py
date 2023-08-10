@@ -16,11 +16,7 @@ from torch import Tensor
 from torchvision.utils import flow_to_image
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from konductor.utilities.pbar import LivePbar
-from konductor.trainer.init import (
-    get_experiment_cfg,
-    add_workers_to_dataloader,
-    get_dataset_config,
-)
+from konductor.trainer.init import get_experiment_cfg, get_dataset_config
 
 from src.dataset.common import MotionDatasetConfig
 from src.model import MotionPerceiver
@@ -274,11 +270,12 @@ def make_video(
 ) -> None:
     """"""
     exp_cfg = get_experiment_cfg(path.parent, None, path.name)
-    add_workers_to_dataloader(exp_cfg, workers)
+    exp_cfg.set_workers(workers)
 
     # Optional override dataset
     if dataset is not None:
         exp_cfg.data[0].dataset.type = dataset
+    exp_cfg.set_batch_size(batch_size, "val")
 
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
     model, dataloader = initialize(exp_cfg, "val")
@@ -305,7 +302,8 @@ def visual_attention(
     threshold: Annotated[float, typer.Option()] = 0.0,
 ):
     exp_cfg = get_experiment_cfg(path.parent, None, path.name)
-    add_workers_to_dataloader(exp_cfg, workers)
+    exp_cfg.set_workers(workers)
+    exp_cfg.set_batch_size(batch_size, "val")
 
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
 

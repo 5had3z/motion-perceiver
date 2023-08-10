@@ -101,13 +101,12 @@ def self_attention_block(
 
 
 class Residual(nn.Module):
-    """blah"""
+    """Residually apply module with dropout on module output"""
 
     def __init__(self, module: nn.Module, dropout: float):
         super().__init__()
         self.module = module
         self.dropout = nn.Dropout(p=dropout)
-        self.dropout_p = dropout
 
     def forward(self, *args, **kwargs):
         x = self.module(*args, **kwargs)
