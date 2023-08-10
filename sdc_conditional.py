@@ -10,6 +10,7 @@ from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from konductor.data import get_dataloader, get_dataset_config
 from konductor.trainer.init import get_experiment_cfg, add_workers_to_dataloader
+from konductor.utilities.pbar import LivePbar
 
 from src.model import MotionPerceiver
 from src.dataset.waymo import WaymoDatasetConfig
@@ -23,6 +24,7 @@ app = typer.Typer()
 class EvalConfig:
     path: Path  # Path to experiment
     random: bool  # Sample car randomly or always sdc
+    n_samples: int  # Number of samples to run from dataloader
 
 
 def mask_future_data_except_target(data: Dict[str, Tensor]):
@@ -37,37 +39,43 @@ def mask_future_data_except_target(data: Dict[str, Tensor]):
 
 def run(model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig):
     """"""
-    model.encoder.input_indicies = range(91)
+    input_stride = model.encoder.input_indicies[0] - model.encoder.input_indicies[0]
+    model.encoder.input_indicies = range(0, 91, input_stride)
     write_dir = config.path / "conditional"
     write_dir.mkdir(exist_ok=True)
 
-    for data in loader:
-        sample: Dict[str, Tensor] = data[0]
-        mask_future_data_except_target(sample)
-        pred: Tensor = model(**sample)["heatmap"][0]
-        pred[pred < 0] *= 8.0
+    with LivePbar(total=config.n_samples, desc="Cond. Infer") as pbar:
+        for data in loader:
+            if pbar.n > config.n_samples:
+                return
+            sample: Dict[str, Tensor] = data[0]
+            mask_future_data_except_target(sample)
+            pred: Tensor = model(**sample)["heatmap"][0]
+            pred[pred < 0] *= 8.0
 
-        signals = [
-            x[0].cpu().transpose(1, 0).numpy()
-            for x in [sample["signals"], sample["signals_valid"].bool()]
-        ]
+            signals = [
+                x[0].cpu().transpose(1, 0).numpy()
+                for x in [sample["signals"], sample["signals_valid"].bool()]
+            ]
 
-        filename = scenairo_id_tensor_2_str(sample["scenario_id"])[0] + ".webm"
-        write_occupancy_video(
-            data=sample["heatmap"][0, 0].cpu().numpy(),
-            pred=pred.sigmoid().cpu().numpy(),
-            path=write_dir / filename,
-            signals=signals,
-            roadmap=sample["roadmap"][0].cpu().numpy(),
-            roadmap_scale=0.5,
-        )
+            filename = scenairo_id_tensor_2_str(sample["scenario_id"])[0] + ".webm"
+            write_occupancy_video(
+                data=sample["heatmap"][0, 0].cpu().numpy(),
+                pred=pred.sigmoid().cpu().numpy(),
+                path=write_dir / filename,
+                signals=signals,
+                roadmap=sample["roadmap"][0].cpu().numpy(),
+                roadmap_scale=0.5,
+            )
+            pbar.update(1)
 
 
 @app.command()
 def main(
     path: Path,
-    batch_size: Annotated[int, typer.Option()] = 4,
+    batch_size: Annotated[int, typer.Option()] = 1,
     random: Annotated[bool, typer.Option()] = False,
+    n_samples: Annotated[int, typer.Option()] = 16,
 ):
     """Perform inference where either the SDC or a
     random car's timesteps are added as future
@@ -87,7 +95,7 @@ def main(
     dataloader = get_dataloader(dataset, "val")
 
     model = load_model(exp_cfg).eval()
-    config = EvalConfig(exp_cfg.work_dir, random)
+    config = EvalConfig(exp_cfg.work_dir, random, n_samples)
     with torch.inference_mode():
         run(model, dataloader, config)
 
