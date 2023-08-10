@@ -219,9 +219,9 @@ class TrafficIA(InputAdapter):
     transform_t: type of transform applied on the input for perciever
     class_emb: learnable class embeddings added to input
     map_max: largest map size in dataset, input data will get normalised to this
+    random_mask: the fraction of valid targets at the input to randomly mask
 
     Waymo Open Motion Classes: [-1 Invalid, 0 Unset, 1 Vehicle, 2 Pedestrian, 3 Cyclist, 3 None]
-
     """
 
     class ClassMode(enum.Enum):
@@ -247,6 +247,7 @@ class TrafficIA(InputAdapter):
         num_frequency_bands: int = 32,
         class_onehot: bool = False,
         class_names: List[str] | None = None,
+        random_mask: float = 0.0,
     ):
         if any(n == 0 for n in [yaw_n_bands, map_n_bands]):
             warn(
@@ -289,12 +290,33 @@ class TrafficIA(InputAdapter):
         self.map_max_freq = map_max_freq
         self.map_n_bands = map_n_bands
         self.heading_encoding = heading_encoding
+        self.random_mask = random_mask
         super().__init__(num_input_channels)
 
+    def apply_random_masking(self, x: Tensor, pad_mask: Tensor | None):
+        """Apply random masking to the input, but never mask timestep 0"""
+        if pad_mask is None:
+            n_targets = x.shape[1]
+            pad_mask = torch.zeros(x.shape[:-1], dtype=torch.bool)
+        else:
+            n_targets = pad_mask.shape[1] - pad_mask.sum(dim=1)
+
+        n_mask = torch.ceil(n_targets * self.random_mask).to(torch.int32)
+
+        for bidx in range(n_mask.shape[0]):
+            candidates = torch.argwhere(~pad_mask[bidx])
+            idxs = torch.randperm(candidates.shape[0])[: n_mask[bidx]]
+            pad_mask[bidx, candidates[idxs]] = True
+
+        return pad_mask
+
     def forward(
-        self, x: Tensor, pad_mask: Tensor | None = None
+        self, x: Tensor, pad_mask: Tensor | None = None, no_random_mask: bool = False
     ) -> Tuple[Tensor, Tensor | Dict[str, Tensor] | None]:
         """Pad mask is true for masked values for pytorch, we want the opposite in IA"""
+        if self.random_mask > 0.0 and self.training and not no_random_mask:
+            pad_mask = self.apply_random_masking(x, pad_mask)
+
         if self.input_mode == TrafficIA.InputMode.RAW:
             return x, pad_mask
 

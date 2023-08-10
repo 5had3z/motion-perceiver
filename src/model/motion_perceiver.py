@@ -211,7 +211,7 @@ class MotionEncoder2(nn.Module):
         first_input_idx = min(self.input_indicies)
 
         x_adapt, x_mask = self.input_adapter(
-            agents[first_input_idx], agents_mask[first_input_idx]
+            agents[first_input_idx], agents_mask[first_input_idx], no_random_mask=True
         )
         x_latent = self.input_layer(in_latent, x_adapt, x_mask)
 
@@ -280,7 +280,9 @@ class MotionEncoder3(MotionEncoder):
         min_idx = min(self.input_indicies)
         out_latent = []
 
-        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_adapt, x_mask = self.input_adapter(
+            agents[min_idx], agents_mask[min_idx], no_random_mask=True
+        )
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
 
         if min_idx in output_idx:
@@ -536,7 +538,9 @@ class MotionEncoder3Ctx(MotionEncoder3):
         else:
             enc_road = None
 
-        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_adapt, x_mask = self.input_adapter(
+            agents[min_idx], agents_mask[min_idx], no_random_mask=True
+        )
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
 
         if min_idx in output_idx:
@@ -596,7 +600,9 @@ class MotionEncoder3CtxDetach(MotionEncoder3Ctx):
         else:
             enc_road = None
 
-        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_adapt, x_mask = self.input_adapter(
+            agents[min_idx], agents_mask[min_idx], no_random_mask=True
+        )
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
 
         if min_idx in output_idx:
@@ -679,7 +685,9 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
         else:
             enc_road = None
 
-        x_adapt, x_mask = self.input_adapter(agents[min_idx], agents_mask[min_idx])
+        x_adapt, x_mask = self.input_adapter(
+            agents[min_idx], agents_mask[min_idx], no_random_mask=True
+        )
         x_latent = self.input_layer(x_latent, x_adapt, x_mask)
 
         if min_idx in output_idx:
