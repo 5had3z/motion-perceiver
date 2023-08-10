@@ -433,6 +433,11 @@ def waymo_motion_pipe(
         outputs.append(scenario_pad)
 
     if cfg.sdc_index:
-        outputs.append(fn.cast(inputs["state/is_sdc"], dtype=DALIDataType.INT32))
+        outputs.append(
+            fn.cast(
+                inputs["state/is_sdc"] * inputs["state/current/valid"][:, 0],
+                dtype=DALIDataType.INT32,
+            )
+        )
 
     return tuple(outputs)

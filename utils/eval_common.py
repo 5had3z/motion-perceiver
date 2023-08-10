@@ -95,6 +95,7 @@ def initialize(
             if eval_waypoints
             else list(range(end_t))
         )
+        data_cfg.val_loader.args["batch_size"] = 1
     elif isinstance(data_cfg, InteractionConfig):
         data_cfg.heatmap_time = list(range(40 // data_cfg.time_stride))
 
