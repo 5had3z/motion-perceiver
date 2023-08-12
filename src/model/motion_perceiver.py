@@ -1118,7 +1118,10 @@ class MotionEncoderODE(MotionEncoder3Ctx):
             [0, tidx - pidx], dtype=latent.dtype, device=latent.device
         )
         norm_latent = self.ode_prop.pre_norm(latent)
-        latent += odeint(self.ode_prop, norm_latent, diff_time, rtol=1e-3, atol=1e-3)[1]
+        latent = (
+            latent
+            + odeint(self.ode_prop, norm_latent, diff_time, rtol=1e-3, atol=1e-3)[1]
+        )
 
         if tidx in input_times:
             x_adapt, x_mask = self.input_adapter(agents[tidx], agents_mask[tidx])
