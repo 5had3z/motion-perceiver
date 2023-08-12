@@ -1086,7 +1086,6 @@ class OdePropagateLayer(nn.Module):
         )
 
     def forward(self, t: Tensor, latent: Tensor) -> Tensor:
-        latent = self.pre_norm(latent)
         latent = torch.cat([latent, t.expand_as(latent[..., :1])], dim=-1)
         latent = self.func(latent)
         return latent
@@ -1118,9 +1117,8 @@ class MotionEncoderODE(MotionEncoder3Ctx):
         diff_time = torch.tensor(
             [0, tidx - pidx], dtype=latent.dtype, device=latent.device
         )
-        latent = (
-            latent + odeint(self.ode_prop, latent, diff_time, rtol=1e-3, atol=1e-3)[1]
-        )
+        norm_latent = self.ode_prop.pre_norm(latent)
+        latent += odeint(self.ode_prop, norm_latent, diff_time, rtol=1e-3, atol=1e-3)[1]
 
         if tidx in input_times:
             x_adapt, x_mask = self.input_adapter(agents[tidx], agents_mask[tidx])
