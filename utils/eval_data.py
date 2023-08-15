@@ -29,7 +29,7 @@ class MetricData:
         return np.array(self._iou).mean()
 
     def __str__(self) -> str:
-        return f"{self.name} - IoU: {self.iou:.3f}, AUC: {self.auc:.3f}"
+        return f"{self.name} IoU: {self.iou:.3f}, AUC: {self.auc:.3f}"
 
 
 def get_db(path: Path):

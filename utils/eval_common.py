@@ -24,24 +24,34 @@ def gather_dict(meta_batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
     ret_dict = {}
     for key in meta_batch[0]:
         if key == "scenario_id":
-            ret_dict[key] = [m[key] for m in meta_batch]
+            ret_dict[key] = sum([m[key] for m in meta_batch], [])
         else:
             ret_dict[key] = torch.cat([m[key] for m in meta_batch], dim=0)
     return ret_dict
 
 
-def yield_filtered_batch(dataloader, filter_ids: Set[str], batch_size: int):
+def yield_filtered_batch(dataloader, filter_ids: Set[str], batch_thresh: int):
+    """Once batch_thresh is met or exeeded, a batch is yielded, therefore the maximum
+    possible batch size is the dataloader batch_size + batch_thresh - 1"""
     meta_batch = []
     for batch in dataloader:
         batch = batch[0]
-        assert batch["scenario_id"].shape[0] == 1, "Batch size greater than 1"
-        id_str = scenairo_id_tensor_2_str(batch["scenario_id"])[0]
-        if id_str not in filter_ids:
+        batch["scenario_id"] = scenairo_id_tensor_2_str(batch["scenario_id"])
+
+        filt_ids: List[int] = [
+            i for i, s in enumerate(batch["scenario_id"]) if s in filter_ids
+        ]
+        if len(filt_ids) == 0:
             continue
-        batch["scenario_id"] = id_str
+
+        for key in batch:
+            if key != "scenario_id":
+                batch[key] = batch[key][filt_ids]
+            else:
+                batch["scenario_id"] = [batch["scenario_id"][i] for i in filt_ids]
 
         meta_batch.append(batch)
-        if len(meta_batch) == batch_size:
+        if len(meta_batch) >= batch_thresh:
             yield [gather_dict(meta_batch)]
             meta_batch = []
 

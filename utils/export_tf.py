@@ -68,12 +68,15 @@ def _get_pred_waypoint_logits(
     ocl_occ_buffer = tf.zeros((1, *predictions.shape[-2:], 1))
 
     # Slice channels into output predictions.
-    for waypoint_prediction in predictions:
+    for tidx in range(predictions.shape[1]):
+        prediction = tf.transpose(predictions[:, tidx], [1, 2, 0])[tf.newaxis]
         pred_waypoint_logits.vehicles.observed_occupancy.append(
-            waypoint_prediction[None, ..., None]
+            prediction[..., 0, tf.newaxis]
         )
-        pred_waypoint_logits.vehicles.occluded_occupancy.append(ocl_occ_buffer)
+        if prediction.shape[-1] == 3:
+            flow_buffer = prediction[..., 1:]
         pred_waypoint_logits.vehicles.flow.append(flow_buffer)
+        pred_waypoint_logits.vehicles.occluded_occupancy.append(ocl_occ_buffer)
 
     return pred_waypoint_logits
 
@@ -121,8 +124,8 @@ def _apply_sigmoid_to_occupancy_logits(
 def _read_prediction_file(numpy_file: Path) -> occupancy_flow_grids.WaypointGrids:
     """Read numpy file with logits and apply any extra transforms"""
     prediction = np.load(numpy_file)
-    # Post process step on logits
-    prediction[prediction < 0] *= 8.0
+    # Post process step on heatmap logits
+    prediction[0, prediction[0] < 0] *= 8.0
     prediction = tf.convert_to_tensor(prediction)
 
     pred_waypoint_logits = _get_pred_waypoint_logits(prediction)
@@ -216,6 +219,7 @@ def _get_validation_and_prediction(
     """Iterate over all test examples in one shard and generate predictions."""
     pt_stats = MetricData("pytorch")
     tf_stats = MetricData("tensorflow")
+    flow: List[float] = []
 
     with tqdm(total=len(scenario_ids)) as pbar:
         for inputs in dataset:
@@ -249,6 +253,7 @@ def _get_validation_and_prediction(
 
             tf_stats.add_auc(tf_metrics.vehicles_observed_auc)
             tf_stats.add_iou(tf_metrics.vehicles_observed_iou)
+            flow.append(tf_metrics.vehicles_flow_epe)
 
             true_waypoints_ = deepcopy(true_waypoints)
             # only care about observed occupancy
@@ -256,12 +261,6 @@ def _get_validation_and_prediction(
                 pytorch_gt_file
             ).vehicles.observed_occupancy
 
-            true_waypoints_.vehicles.observed_occupancy = [
-                true_waypoints_.vehicles.observed_occupancy[0][0, 0, idx, tf.newaxis]
-                for idx in range(
-                    true_waypoints_.vehicles.observed_occupancy[0].shape[2]
-                )
-            ]
             torch_metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
                 config, true_waypoints_, pred_waypoints
             )

@@ -18,14 +18,19 @@ def inference(
     """Performs inference on testing data and writes prediction and ground truth
     to a file for later post processing and analysis.
     Returns number of ids written"""
-    heatmaps: Tensor = model(**batch)["heatmap"]
+    preds: Dict[str, Tensor] = model(**batch)
+
+    if "flow" in preds:
+        pred_batch = torch.cat([preds["heatmap"].unsqueeze(1), preds["flow"]], dim=1)
+    else:
+        pred_batch = preds["heatmap"].unsqueeze(1)
 
     # Write to File
-    for filename, pred, gt in zip(batch["scenario_id"], heatmaps, batch["heatmap"]):
+    for filename, pred, gt in zip(batch["scenario_id"], pred_batch, batch["heatmap"]):
         np.save(pred_dir / f"{filename}.npy", pred.cpu().numpy())
-        np.save(gt_dir / f"{filename}.npy", gt[None].cpu().numpy())
+        np.save(gt_dir / f"{filename}.npy", gt.cpu().numpy())
 
-    return heatmaps.shape[0]
+    return pred_batch.shape[0]
 
 
 def run_export(
