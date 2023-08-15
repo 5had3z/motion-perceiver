@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Tuple
 from pathlib import Path
 from math import pi
 
-import nvidia.dali.fn as fn
+from nvidia.dali import fn
 from nvidia.dali.data_node import DataNode
 from nvidia.dali.types import DALIDataType, Constant
 from konductor.data import DatasetConfig
@@ -93,10 +93,10 @@ def get_sample_idxs(cfg: MotionDatasetConfig):
         )
     else:
         # run input validation, piecewise should be in ascending order
-        for before, next in zip(
+        for before, after in zip(
             cfg.random_heatmap_piecewise, cfg.random_heatmap_piecewise[1:]
         ):
-            assert before["max"] < next["min"]
+            assert before["max"] < after["min"]
 
         time_idxs = []
         for kwargs in cfg.random_heatmap_piecewise:
