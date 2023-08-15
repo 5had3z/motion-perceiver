@@ -11,13 +11,17 @@ from nvidia.dali import pipeline_def, Pipeline
 import nvidia.dali.tfrecord as tfrec
 
 from .common import (
-    get_cache_record_idx_path,
     MotionDatasetConfig,
+    get_cache_record_idx_path,
     get_sample_idxs,
-    VALID_AUG,
     dali_rad2deg,
+    VALID_AUG,
 )
 
+PAST_FRAMES = 8
+FUTURE_FRAMES = 12
+TOTAL_FRAMES = PAST_FRAMES + FUTURE_FRAMES
+MAX_AGENTS = 32
 SUBSETS = {"ETH", "Hotel", "Univ", "Zara1", "Zara2"}
 
 
@@ -35,7 +39,24 @@ class PedestrianDatasetConfig(MotionDatasetConfig):
         return asdict(self)
 
     def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        return super().get_instance(mode, **kwargs)
+        tfrecords = (
+            [s for s in SUBSETS if s != self.withheld]
+            if mode == Mode.train
+            else self.withheld
+        )
+
+        output_map = ["agents", "agents_valid"]
+        if self.roadmap:
+            output_map.append("context")
+        if self.scenario_id:
+            output_map.append("scenario_id")
+        if self.occupancy_size:
+            output_map.append("occupancy")
+
+        pipeline = pedestrian_pipe(
+            self.basepath, **kwargs, cfg=self, tfrecords=tfrecords
+        )
+        return pipeline, output_map, mode.name, -1
 
 
 @pipeline_def
@@ -45,6 +66,16 @@ def pedestrian_pipe(
     num_shards: int,
     random_shuffle: bool,
     cfg: PedestrianDatasetConfig,
+    tfrecords: List[str],
     augmentations: List[ModuleInitConfig],
 ):
-    state_features = {"state/x": tfrec.FixedLenFeature([])}
+    state_features = {
+        "x": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.float32, 0.0),
+        "y": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.float32, 0.0),
+        "t": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.float32, 0.0),
+        "vx": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.float32, 0.0),
+        "vy": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.float32, 0.0),
+        "vt": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.float32, 0.0),
+        "valid": tfrec.FixedLenFeature([MAX_AGENTS, TOTAL_FRAMES], tfrec.int64, 0.0),
+        "scenario_id": tfrec.FixedlenFeature([], tfrec.string, ""),
+    }

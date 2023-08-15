@@ -9,7 +9,7 @@ import numpy as np
 from nvidia.dali import pipeline_def, Pipeline, newaxis
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
-import nvidia.dali.fn as fn
+from nvidia.dali import fn
 import nvidia.dali.tfrecord as tfrec
 from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
 
@@ -387,10 +387,10 @@ def waymo_motion_pipe(
     if cfg.roadmap:
         outputs.append(
             fn.roadgraph_image(
-                inputs[f"roadgraph_samples/xyz"],
-                inputs[f"roadgraph_samples/type"],
-                inputs[f"roadgraph_samples/id"],
-                inputs[f"roadgraph_samples/valid"],
+                inputs["roadgraph_samples/xyz"],
+                inputs["roadgraph_samples/type"],
+                inputs["roadgraph_samples/id"],
+                inputs["roadgraph_samples/valid"],
                 xy_tf,
                 size=cfg.roadmap_size,
                 normalize_value=cfg.map_normalize,
@@ -412,12 +412,12 @@ def waymo_motion_pipe(
         if cfg.time_stride > 1:
             data_all = fn.stride_slice(data_all, axis=1, stride=cfg.time_stride)
 
-        occ_kwargs = dict(
-            size=cfg.occupancy_size,
-            roi=cfg.occupancy_roi,
-            filter_future=cfg.filter_future,
-            separate_classes=cfg.separate_classes,
-        )
+        occ_kwargs = {
+            "size": cfg.occupancy_size,
+            "roi": cfg.occupancy_roi,
+            "filter_future": cfg.filter_future,
+            "separate_classes": cfg.separate_classes,
+        }
 
         outputs.append(time_idx)
         outputs.append(fn.occupancy_mask(data_all, data_valid, time_idx, **occ_kwargs))
