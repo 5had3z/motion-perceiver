@@ -6,10 +6,9 @@ import math
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from nvidia.dali import pipeline_def, Pipeline, newaxis
+from nvidia.dali import pipeline_def, Pipeline, newaxis, fn
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
-from nvidia.dali import fn
 import nvidia.dali.tfrecord as tfrec
 from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
 

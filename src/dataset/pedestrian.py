@@ -4,10 +4,11 @@ Conglomoration of ETH and UCY pedestrain datasets into a set of tfrecords.
 
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
+from subprocess import run
 from typing import Any, Dict, List, Tuple
 
 from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
-from nvidia.dali import pipeline_def, Pipeline
+from nvidia.dali import pipeline_def, Pipeline, fn
 import nvidia.dali.tfrecord as tfrec
 
 try:
@@ -51,8 +52,9 @@ class PedestrianDatasetConfig(MotionDatasetConfig):
         tfrecords = (
             [s for s in SUBSETS if s != self.withheld]
             if mode == Mode.train
-            else self.withheld
+            else [self.withheld]
         )
+        tfrecords = [t + ".tfrecord" for t in tfrecords]
 
         output_map = ["agents", "agents_valid"]
         if self.roadmap:
@@ -78,13 +80,33 @@ def pedestrian_pipe(
     tfrecords: List[str],
     augmentations: List[ModuleInitConfig],
 ):
-    state_features = {
+    rec_features = {
         "x": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
         "y": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
         "t": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
         "vx": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
         "vy": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
         "vt": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "valid": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.int64, 0.0),
-        "scenario_id": tfrec.FixedlenFeature([], tfrec.string, ""),
+        "valid": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.int64, 0),
+        "scenario_id": tfrec.FixedLenFeature([], tfrec.string, ""),
     }
+
+    tfrec_idx_root = get_cache_record_idx_path(record_root)
+
+    def record_idx(tf_record: str) -> Path:
+        return tfrec_idx_root / f"{tf_record}.idx"
+
+    for fragment in tfrecords:
+        tfrec_idx = record_idx(fragment)
+        if not tfrec_idx.exists():
+            run(["tfrecord2idx", str(record_root / fragment), str(tfrec_idx)])
+
+    inputs = fn.readers.tfrecord(
+        path=[str(record_root / r) for r in tfrecords],
+        index_path=[str(record_idx(r)) for r in tfrecords],
+        features=rec_features,
+        shard_id=shard_id,
+        num_shards=num_shards,
+        random_shuffle=random_shuffle,
+        name="train" if len(tfrecords) > 1 else "val",
+    )

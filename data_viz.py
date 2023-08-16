@@ -11,6 +11,7 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from src.dataset.common import MotionDatasetConfig
 from src.dataset.interaction import InteractionConfig
 from src.dataset.waymo import WaymoDatasetConfig
+from src.dataset.pedestrian import PedestrianDatasetConfig
 import src.dataset.visualisation as dv
 import src.dataset.utils as du
 
@@ -36,7 +37,7 @@ def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
 @inference_mode()
 def main():
     batch_size = 8
-    datacfg = InteractionConfig(
+    datacfg = PedestrianDatasetConfig(
         train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         val_loader=ModuleInitConfig(
             type="dali",
@@ -45,6 +46,7 @@ def main():
                 "augmentations": [ModuleInitConfig("random_rotate", {})],
             },
         ),
+        withheld="eth",
         full_sequence=True,
         map_normalize=80.0,
         occupancy_size=256,
@@ -53,7 +55,7 @@ def main():
         roadmap=True,
         # use_sdc_frame=True,
         # waymo_eval_frame=True,
-        heatmap_time=list(range(0, 40, 10)),
+        heatmap_time=list(range(0, 21)),
         # random_heatmap_count=0,
         # random_heatmap_minmax=(0, 60),
         # signal_features=False,
