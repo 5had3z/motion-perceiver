@@ -18,6 +18,7 @@ class OccupancyMaskGenerator : public ::dali::Operator<Backend>
 private:
     bool mSeparateClasses{false};
     bool mFilterFuture{false};
+    float mCircleRadPx{0.0};
     float mROIScale{1.0};
     int64_t mMaskSize{0};
 
@@ -26,6 +27,7 @@ public:
         : ::dali::Operator<Backend>(spec)
         , mSeparateClasses{spec.GetArgument<bool>("separate_classes")}
         , mFilterFuture{spec.GetArgument<bool>("filter_future")}
+        , mCircleRadPx{spec.GetArgument<float>("circle_radius")}
         , mROIScale{spec.GetArgument<float>("roi")}
         , mMaskSize{spec.GetArgument<int64_t>("size")}
     {

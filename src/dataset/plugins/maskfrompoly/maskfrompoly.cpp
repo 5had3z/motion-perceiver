@@ -13,21 +13,6 @@ namespace occupancyop
 using ConstDaliTensor = ::dali::ConstSampleView<::dali::CPUBackend>;
 using DaliTensor = ::dali::SampleView<::dali::CPUBackend>;
 
-struct stateData
-{
-    float x;
-    float y;
-    float yaw;
-    float vx;
-    float vy;
-    float vyaw;
-    float w;
-    float l;
-    float cls;
-};
-
-using state_t = struct stateData;
-
 /**
  * @brief sizeof(DALIDataType)
  *
@@ -128,6 +113,73 @@ std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor) noexcept
     return newMask;
 }
 
+struct stateData
+{
+    float x;
+    float y;
+    float yaw;
+    float vx;
+    float vy;
+    float vyaw;
+    float w;
+    float l;
+    float cls;
+};
+
+void renderBBox(const void* tensorData, int64_t index, std::vector<cv::Mat> rasterImage,
+    const dali::TensorShape<-1>& outputDims, float roiScale, bool separateClasses) noexcept
+{
+    const auto data = static_cast<const stateData*>(tensorData)[index];
+
+    const int classIdx = static_cast<int>(data.cls) - 1;
+    if (classIdx < 0 || classIdx > 2)
+        return; // skip class that isn't vehicle, pedestrian, cyclist
+
+    // Scaling factor from normalized coordinates to pixel coordinates
+    const float xScale = outputDims[3] / 2.f;
+    const float yScale = outputDims[2] / 2.f;
+
+    // Calulate bbox in image coordinates
+    // transform absolute position from -1,1 to 0,1 before pixel scaling factor
+    const float x = (data.x / roiScale + 1.f) * xScale;
+    const float y = (data.y / roiScale + 1.f) * yScale;
+    const float width = data.w / roiScale * xScale;
+    const float length = data.l / roiScale * yScale;
+
+    // Find polyPoints
+    auto polyPoints = poseToPoly(x, y, data.yaw * M_PI, width, length);
+
+    // Apply to image
+    cv::fillConvexPoly(rasterImage[separateClasses ? classIdx : 0], polyPoints, cv::Scalar(1));
+}
+
+struct pedestrainData
+{
+    float x;
+    float y;
+    float t;
+    float vx;
+    float vy;
+    float vt;
+};
+
+void renderCircle(const void* tensorData, int64_t index, cv::Mat rasterImage, const dali::TensorShape<-1>& outputDims,
+    float roiScale, float circleRad) noexcept
+{
+    const auto data = static_cast<const pedestrainData*>(tensorData)[index];
+
+    // Scaling factor from normalized coordinates to pixel coordinates
+    const float xScale = outputDims[3] / 2.f;
+    const float yScale = outputDims[2] / 2.f;
+
+    // Calulate bbox in image coordinates
+    // transform absolute position from -1,1 to 0,1 before pixel scaling factor
+    const auto x = static_cast<int>((data.x / roiScale + 1.f) * xScale);
+    const auto y = static_cast<int>((data.y / roiScale + 1.f) * yScale);
+
+    cv::circle(rasterImage, cv::Point2i{x, y}, circleRad * xScale, cv::Scalar{1}, -1);
+}
+
 /**
  * @brief Create a Heatmap Image at a time interval
  *
@@ -137,7 +189,7 @@ std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor) noexcept
  * @param timeIdx
  */
 void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std::size_t inTimeIdx,
-    DaliTensor outputTensor, std::size_t outTimeIdx, double roiScale, bool separateClasses) noexcept
+    DaliTensor outputTensor, std::size_t outTimeIdx, float roiScale, float circleRad, bool separateClasses) noexcept
 {
     const auto outputDims = outputTensor.shape();
     const auto outputStride = outputDims[2] * outputDims[3] * daliType2size(outputTensor.type());
@@ -154,6 +206,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
 
     const auto instanceDim = dataTensor.shape()[0];
     const auto timeDim = dataTensor.shape()[1];
+    const bool isBboxTensor = dataTensor.shape()[2] == 9;
 
     for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
     {
@@ -161,28 +214,14 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
         // If valid sample
         if (maskTensor.data<int>()[cIdx])
         {
-            const auto data = static_cast<const state_t*>(dataTensor.raw_data())[cIdx];
-
-            const int classIdx = static_cast<int>(data.cls) - 1;
-            if (classIdx < 0 || classIdx > 2)
-                continue; // skip class that isn't vehicle, pedestrian, cyclist
-
-            // Scaling factor from normalized coordinates to pixel coordinates
-            const float xScale = outputDims[3] / 2.f;
-            const float yScale = outputDims[2] / 2.f;
-
-            // Calulate bbox in image coordinates
-            // transform absolute position from -1,1 to 0,1 before pixel scaling factor
-            const float x = (data.x / roiScale + 1.f) * xScale;
-            const float y = (data.y / roiScale + 1.f) * yScale;
-            const float width = data.w / roiScale * xScale;
-            const float length = data.l / roiScale * yScale;
-
-            // Find polyPoints
-            auto polyPoints = poseToPoly(x, y, data.yaw * M_PI, width, length);
-
-            // Apply to image
-            cv::fillConvexPoly(heatmapImages[separateClasses ? classIdx : 0], polyPoints, cv::Scalar(1));
+            if (isBboxTensor)
+            {
+                renderBBox(dataTensor.raw_data(), cIdx, heatmapImages, outputDims, roiScale, separateClasses);
+            }
+            else
+            {
+                renderCircle(dataTensor.raw_data(), cIdx, heatmapImages[0], outputDims, roiScale, circleRad);
+            }
         }
     }
 }
@@ -191,7 +230,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
  * @brief Run over multiple time indexes
  */
 void createHeatMapImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, ConstDaliTensor timeIdxs,
-    DaliTensor outputTensor, bool filterFuture, double roiScale, bool separateClasses) noexcept
+    DaliTensor outputTensor, float roiScale, float circleRad, bool separateClasses, bool filterFuture) noexcept
 {
     const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
 
@@ -199,8 +238,8 @@ void createHeatMapImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTe
 
     for (int64_t outputIdx = 0; outputIdx < timeIdxs.shape()[0]; ++outputIdx)
     {
-        createHeatmapImage(
-            stateTensor, mask_, timeIdxs.data<int>()[outputIdx], outputTensor, outputIdx, roiScale, separateClasses);
+        createHeatmapImage(stateTensor, mask_, timeIdxs.data<int>()[outputIdx], outputTensor, outputIdx, roiScale,
+            circleRad, separateClasses);
     }
 }
 
@@ -220,7 +259,7 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
             [&, sampleId](int)
             {
                 createHeatMapImageMulti(stateTensor[sampleId], maskTensor[sampleId], timeTensor[sampleId],
-                    outputTensor[sampleId], mFilterFuture, mROIScale, mSeparateClasses);
+                    outputTensor[sampleId], mROIScale, mCircleRadPx, mSeparateClasses, mFilterFuture);
             });
     }
     tPool.RunAll();
@@ -235,7 +274,7 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
  * @param timeIdx
  */
 void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std::size_t inTimeIdx,
-    DaliTensor outputTensor, std::size_t outTimeIdx, double roiScale, bool separateClasses) noexcept
+    DaliTensor outputTensor, std::size_t outTimeIdx, float roiScale, bool separateClasses) noexcept
 {
     const auto outputDims = outputTensor.shape();
     const auto outputStride = outputDims[2] * outputDims[3] * daliType2size(outputTensor.type());
@@ -260,7 +299,7 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
         // If valid sample
         if (maskTensor.data<int>()[cIdx])
         {
-            const auto data = static_cast<const state_t*>(dataTensor.raw_data())[cIdx];
+            const auto data = static_cast<const stateData*>(dataTensor.raw_data())[cIdx];
 
             const int classIdx = static_cast<int>(data.cls) - 1;
             if (classIdx < 0 || classIdx > 2)
@@ -291,7 +330,7 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
  * @brief Run over multiple time indexes
  */
 void createFlowImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, ConstDaliTensor timeIdxs,
-    DaliTensor outputTensor, bool filterFuture, double roiScale, bool separateClasses) noexcept
+    DaliTensor outputTensor, bool filterFuture, float roiScale, bool separateClasses) noexcept
 {
     const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
 
@@ -339,6 +378,8 @@ DALI_SCHEMA(OccupancyMask)
     .NumOutput(1)
     .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
     .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
+    .AddArg("circle_radius", "Size of the occupancy radius if running on pedestrian dataset",
+        ::dali::DALIDataType::DALI_FLOAT)
     .AddArg("separate_classes", "Separate classes occupancy into different channels", ::dali::DALIDataType::DALI_BOOL)
     .AddArg("filter_future", "Filter ids that don't appear in past or current frame", ::dali::DALIDataType::DALI_BOOL);
 

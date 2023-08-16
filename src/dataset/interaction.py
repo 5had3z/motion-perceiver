@@ -7,10 +7,9 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
-from nvidia.dali import pipeline_def, Pipeline, newaxis
+from nvidia.dali import pipeline_def, Pipeline, newaxis, fn
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
-import nvidia.dali.fn as fn
 import nvidia.dali.tfrecord as tfrec
 
 try:
@@ -156,7 +155,6 @@ def interation_pipeline(
     if cfg.map_normalize > 0.0:
         data_xy /= cfg.map_normalize
         data_wl /= cfg.map_normalize
-
         data_valid *= (dmath.abs(data_xy[:, :, 0]) < 1) * (
             dmath.abs(data_xy[:, :, 1]) < 1
         )

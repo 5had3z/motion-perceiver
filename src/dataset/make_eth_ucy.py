@@ -75,13 +75,6 @@ def format_dataframe(df: pd.DataFrame):
     df.sort_index(axis="index", inplace=True)
 
 
-def calc_statistics(df: pd.DataFrame) -> Tuple[int, float]:
-    """Fix max number of agents, and the maximum extent"""
-    n_unique = len(df["id"].unique())
-    extent: float = max(df[a].max() - df[a].min() for a in ["x", "y"])
-    return n_unique, extent
-
-
 @app.command()
 def get_statistics(
     path: Path, length: Annotated[int, typer.Option()] = SEQUENCE_LENGTH
@@ -101,13 +94,10 @@ def get_statistics(
     for dataset in filenames:
         data = pd.read_csv(dataset, sep="\t", index_col=False, header=None)
         format_dataframe(data)
+        max_extent = max(max_extent, data["x"].abs().max(), data["y"].abs().max())
         for start_ts in range(0, data["ts"].max(), length):
             seq = data[data["ts"].between(start_ts, start_ts + length - 1)]
-            n_agent, extent = calc_statistics(seq)
-            if n_agent > max_agents:
-                max_agents = n_agent
-            if extent > max_extent:
-                max_extent = extent
+            max_agents = max(max_agents, len(seq["id"].unique()))
 
     print(f"{max_extent=:.2f}, {max_agents=}")
 
@@ -139,14 +129,6 @@ def make_tf_example(
         x[idx, agent["ts"]] = agent["x"]
         y[idx, agent["ts"]] = agent["y"]
 
-    # Center the coordinate system
-    valid_x = x[valid]
-    center_x = valid_x.max() - valid_x.min()
-    valid_y = y[valid]
-    center_y = valid_y.max() - valid_y.min()
-    x -= center_x
-    y -= center_y
-
     # Calculate interpolated values
     vx = velocity(x)
     vy = velocity(y)
@@ -164,7 +146,7 @@ def make_tf_example(
                 "vx":           tf.train.Feature(float_list=tf.train.FloatList(value=vx.flatten())),
                 "vy":           tf.train.Feature(float_list=tf.train.FloatList(value=vy.flatten())),
                 "vt":           tf.train.Feature(float_list=tf.train.FloatList(value=vt.flatten())),
-                "valid":        tf.train.Feature(float_list=tf.train.FloatList(value=valid.flatten())),
+                "valid":        tf.train.Feature(int64_list=tf.train.Int64List(value=valid.flatten())),
                 "scenario_id":  tf.train.Feature(bytes_list=tf.train.BytesList(value=[scenario_id.encode("utf-8")])),
             }
             # fmt: on
@@ -213,6 +195,7 @@ def build(
 
     filenames = get_filenames(source)
     for dataset in filenames:
+        print(f"Building {dataset.stem}")
         tfrecord_file = (dest / TXT2RECORD[dataset.stem]).with_suffix(".tfrecord")
         create_tfrecord_dataset(dataset, tfrecord_file, stride, length, max_agents)
 
