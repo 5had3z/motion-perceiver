@@ -80,7 +80,7 @@ std::vector<cv::Point2i> poseToPoly(float x, float y, float t, float w, float l)
  * @param maskTensor
  * @return std::vector<int>
  */
-std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor) noexcept
+std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor, int filterEndIdx) noexcept
 {
     std::vector<int> newMask;
     const auto outputDims = maskTensor.shape();
@@ -93,9 +93,9 @@ std::vector<int> maskInvalidFuture(ConstDaliTensor maskTensor) noexcept
     {
         const auto instStart = maskTensor.data<int>() + inst_id * outputDims.shape[1];
 
-        // Check if the target is valid at any point until "current"
-        const auto observeable
-            = std::any_of(std::execution::unseq, instStart, instStart + 11, [](auto elem) { return elem > 0; });
+        // Check if the target is valid at any point until and including the end index
+        const auto observeable = std::any_of(
+            std::execution::unseq, instStart, instStart + filterEndIdx + 1, [](auto elem) { return elem > 0; });
 
         // Get iterator to start of the instance's mask
         if (observeable)
@@ -230,11 +230,12 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
  * @brief Run over multiple time indexes
  */
 void createHeatMapImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, ConstDaliTensor timeIdxs,
-    DaliTensor outputTensor, float roiScale, float circleRad, bool separateClasses, bool filterFuture) noexcept
+    DaliTensor outputTensor, float roiScale, float circleRad, int filterEndIdx, bool separateClasses) noexcept
 {
-    const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
+    const std::vector<int> futureMask
+        = filterEndIdx > 0 ? maskInvalidFuture(maskTensor, filterEndIdx) : std::vector<int>();
 
-    auto mask_ = filterFuture ? ConstDaliTensor(futureMask.data(), maskTensor.shape()) : maskTensor;
+    auto mask_ = filterEndIdx > 0 ? ConstDaliTensor(futureMask.data(), maskTensor.shape()) : maskTensor;
 
     for (int64_t outputIdx = 0; outputIdx < timeIdxs.shape()[0]; ++outputIdx)
     {
@@ -259,7 +260,7 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
             [&, sampleId](int)
             {
                 createHeatMapImageMulti(stateTensor[sampleId], maskTensor[sampleId], timeTensor[sampleId],
-                    outputTensor[sampleId], mROIScale, mCircleRadPx, mSeparateClasses, mFilterFuture);
+                    outputTensor[sampleId], mROIScale, mCircleRadPx, mFilterTimestep, mSeparateClasses);
             });
     }
     tPool.RunAll();
@@ -330,11 +331,12 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
  * @brief Run over multiple time indexes
  */
 void createFlowImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, ConstDaliTensor timeIdxs,
-    DaliTensor outputTensor, bool filterFuture, float roiScale, bool separateClasses) noexcept
+    DaliTensor outputTensor, float roiScale, int filterEndIdx, bool separateClasses) noexcept
 {
-    const std::vector<int> futureMask = filterFuture ? maskInvalidFuture(maskTensor) : std::vector<int>();
+    const std::vector<int> futureMask
+        = filterEndIdx > 0 ? maskInvalidFuture(maskTensor, filterEndIdx) : std::vector<int>();
 
-    auto mask_ = filterFuture ? ConstDaliTensor(futureMask.data(), maskTensor.shape()) : maskTensor;
+    auto mask_ = filterEndIdx > 0 ? ConstDaliTensor(futureMask.data(), maskTensor.shape()) : maskTensor;
 
     for (int64_t outputIdx = 0; outputIdx < timeIdxs.shape()[0]; ++outputIdx)
     {
@@ -359,7 +361,7 @@ void FlowMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
             [&, sampleId](int)
             {
                 createFlowImageMulti(stateTensor[sampleId], maskTensor[sampleId], timeTensor[sampleId],
-                    outputTensor[sampleId], mFilterFuture, mROIScale, mSeparateClasses);
+                    outputTensor[sampleId], mROIScale, mFilterTimestep, mSeparateClasses);
             });
     }
     tPool.RunAll();
@@ -376,12 +378,11 @@ DALI_SCHEMA(OccupancyMask)
         "also returns the time index of the sample")
     .NumInput(3)
     .NumOutput(1)
-    .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
-    .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
-    .AddArg("circle_radius", "Size of the occupancy radius if running on pedestrian dataset",
-        ::dali::DALIDataType::DALI_FLOAT)
-    .AddArg("separate_classes", "Separate classes occupancy into different channels", ::dali::DALIDataType::DALI_BOOL)
-    .AddArg("filter_future", "Filter ids that don't appear in past or current frame", ::dali::DALIDataType::DALI_BOOL);
+    .AddArg("size", "Size of the output image, the image is always square", dali::DALIDataType::DALI_INT64)
+    .AddArg("roi", "Scale to fraction of ROI observeable, centered", dali::DALIDataType::DALI_FLOAT)
+    .AddOptionalArg("circle_radius", "Size of the occupancy radius if running on pedestrian dataset", 0.f)
+    .AddArg("separate_classes", "Separate classes occupancy into different channels", dali::DALIDataType::DALI_BOOL)
+    .AddOptionalArg("filter_timestep", "Filter ids that don't appear in the frames before this timestep", -1);
 
 DALI_REGISTER_OPERATOR(FlowMask, ::occupancyop::FlowMaskGenerator<::dali::CPUBackend>, ::dali::CPU);
 
@@ -395,4 +396,4 @@ DALI_SCHEMA(FlowMask)
     .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
     .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
     .AddArg("separate_classes", "Separate classes occupancy into different channels", ::dali::DALIDataType::DALI_BOOL)
-    .AddArg("filter_future", "Filter ids that don't appear in past or current frame", ::dali::DALIDataType::DALI_BOOL);
+    .AddOptionalArg("filter_timestep", "Filter ids that don't appear in the frames before this timestep", -1);

@@ -17,18 +17,18 @@ class OccupancyMaskGenerator : public ::dali::Operator<Backend>
 {
 private:
     bool mSeparateClasses{false};
-    bool mFilterFuture{false};
     float mCircleRadPx{0.0};
     float mROIScale{1.0};
+    int64_t mFilterTimestep{-1};
     int64_t mMaskSize{0};
 
 public:
     inline explicit OccupancyMaskGenerator(const ::dali::OpSpec& spec)
         : ::dali::Operator<Backend>(spec)
         , mSeparateClasses{spec.GetArgument<bool>("separate_classes")}
-        , mFilterFuture{spec.GetArgument<bool>("filter_future")}
         , mCircleRadPx{spec.GetArgument<float>("circle_radius")}
         , mROIScale{spec.GetArgument<float>("roi")}
+        , mFilterTimestep{spec.GetArgument<int64_t>("filter_timestep")}
         , mMaskSize{spec.GetArgument<int64_t>("size")}
     {
     }
@@ -80,16 +80,16 @@ class FlowMaskGenerator : public ::dali::Operator<Backend>
 {
 private:
     bool mSeparateClasses{false};
-    bool mFilterFuture{false};
     float mROIScale{1.0};
+    int64_t mFilterTimestep{-1};
     int64_t mMaskSize{0};
 
 public:
     inline explicit FlowMaskGenerator(const ::dali::OpSpec& spec)
         : ::dali::Operator<Backend>(spec)
         , mSeparateClasses{spec.GetArgument<bool>("separate_classes")}
-        , mFilterFuture{spec.GetArgument<bool>("filter_future")}
         , mROIScale{spec.GetArgument<float>("roi")}
+        , mFilterTimestep{spec.GetArgument<int64_t>("filter_timestep")}
         , mMaskSize{spec.GetArgument<int64_t>("size")}
     {
     }

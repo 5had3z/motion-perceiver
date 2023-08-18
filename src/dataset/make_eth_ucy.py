@@ -9,7 +9,7 @@ Data should be sourced from here (inline with nvlabs/trajdata):
 https://github.com/StanfordASL/Trajectron-plus-plus/tree/master/experiments/pedestrians/raw/raw/all_data
 """
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional
 from typing_extensions import Annotated
 
 import numpy as np
@@ -19,7 +19,7 @@ import typer
 
 app = typer.Typer()
 
-from pedestrian import SEQUENCE_LENGTH, SUBSETS, MAX_AGENTS
+from src.dataset.eth_ucy import SEQUENCE_LENGTH, SUBSETS, MAX_AGENTS
 
 TXT2RECORD = {
     "biwi_eth": "eth",
@@ -102,6 +102,41 @@ def get_statistics(
     print(f"{max_extent=:.2f}, {max_agents=}")
 
 
+def interpolate(data: np.ndarray, begin: int, end: int):
+    first = data[begin - 1]
+    last = data[end + 1]
+    interp = np.linspace(first, last, end - begin + 3)
+    return interp[1:-1]
+
+
+def clean_data(valid: np.ndarray, x: np.ndarray, y: np.ndarray):
+    """
+    Insert repeat values at start and end, linear interpolate inbetween
+    does not modify "valid" mask, most of this sanitation is to prevent
+    erronious values in vx/vy/t/vt
+    """
+    valid = valid.copy()  # Make local copy
+
+    # Extend repeat data outside of valid range
+    first_valid = np.argmax(valid)
+    x[:first_valid] = x[first_valid]
+    y[:first_valid] = y[first_valid]
+    valid[:first_valid] = 1
+
+    last_valid = np.argmax(valid[::-1])
+    x[last_valid:] = x[last_valid]
+    y[last_valid:] = y[last_valid]
+    valid[last_valid:] = 1
+
+    # Linear Interpolate data inbetween
+    while not valid.all():
+        sidx = np.argmin(valid).item()  # Find first invalid
+        eidx = np.argmax(valid[sidx:]).item() + sidx - 1  # Find last valid
+        x[sidx : eidx + 1] = interpolate(x, sidx, eidx)
+        y[sidx : eidx + 1] = interpolate(y, sidx, eidx)
+        valid[sidx : eidx + 1] = 1
+
+
 def velocity(data: np.ndarray) -> np.ndarray:
     vel = data[:, 1:] - data[:, :-1]
     vel = np.concatenate([vel, vel[:, [-1]]], axis=1)
@@ -110,24 +145,30 @@ def velocity(data: np.ndarray) -> np.ndarray:
 
 def make_tf_example(
     df: pd.DataFrame, scenario_id: str, length: int, max_agents: int
-) -> tf.train.Example:
+) -> tf.train.Example | None:
     """Make tensorflow example with centered coordinate system
     and interpolated t(headding), vx, vy,"""
     x = np.zeros((max_agents, length), dtype=np.float32)
     y = x.copy()
     valid = np.zeros((max_agents, length), dtype=np.int64)
-    # scenario_id = np.frombuffer(scenario_id.encode("utf-8"), dtype=np.byte)
 
     # Make local copy to not mutate outer timestamps
     df = df.copy()
     df["ts"] = df["ts"] - df["ts"].min()
 
+    uids = df["id"].unique()
+
+    if len(uids) < 2:
+        return None
+
     # Fill out valid data
-    for idx, id in enumerate(df["id"].unique()):
+    for idx, id in enumerate(uids):
         agent = df[df["id"] == id]
         valid[idx, agent["ts"]] = 1
         x[idx, agent["ts"]] = agent["x"]
         y[idx, agent["ts"]] = agent["y"]
+
+        clean_data(valid[idx], x[idx], y[idx])
 
     # Calculate interpolated values
     vx = velocity(x)
@@ -165,15 +206,19 @@ def write_tfrecord(dest: Path, data: List[tf.train.Example]):
 def create_tfrecord_dataset(
     filename: Path, dest: Path, stride: int, length: int, max_agents: int
 ):
+    print(f"Building {filename.stem}")
     data = pd.read_csv(filename, sep="\t", index_col=False, header=None)
     format_dataframe(data)
+
     tf_samples: List[tf.train.Example] = []
     for start_ts in range(0, data["ts"].max(), stride):
         seq = data[data["ts"].between(start_ts, start_ts + length - 1)]
         scenario = f"{filename.stem}_{start_ts}"
         tf_sample = make_tf_example(seq, scenario, length, max_agents)
-        tf_samples.append(tf_sample)
+        if tf_sample is not None:
+            tf_samples.append(tf_sample)
 
+    print(f"Writing {filename.stem} with {len(tf_samples)} samples")
     write_tfrecord(dest, tf_samples)
 
 
@@ -195,7 +240,6 @@ def build(
 
     filenames = get_filenames(source)
     for dataset in filenames:
-        print(f"Building {dataset.stem}")
         tfrecord_file = (dest / TXT2RECORD[dataset.stem]).with_suffix(".tfrecord")
         create_tfrecord_dataset(dataset, tfrecord_file, stride, length, max_agents)
 

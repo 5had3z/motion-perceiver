@@ -27,6 +27,10 @@ _TIME_KEYS = ["past", "current", "future"]
 @dataclass
 @DATASET_REGISTRY.register_module("waymo_motion")
 class WaymoDatasetConfig(MotionDatasetConfig):
+    current_time_idx: int = 10
+    sequence_length: int = 91
+    max_agents: int = 128
+
     signal_features: bool = False
     separate_classes: bool = False
     only_vehicles: bool = False
@@ -414,7 +418,7 @@ def waymo_motion_pipe(
         occ_kwargs = {
             "size": cfg.occupancy_size,
             "roi": cfg.occupancy_roi,
-            "filter_future": cfg.filter_future,
+            "filter_timestep": cfg.current_time_idx if cfg.filter_future else -1,
             "separate_classes": cfg.separate_classes,
         }
 

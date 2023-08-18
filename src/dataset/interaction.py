@@ -221,7 +221,7 @@ def interation_pipeline(
         occ_kwargs = {
             "size": cfg.occupancy_size,
             "roi": cfg.occupancy_roi,
-            "filter_future": cfg.filter_future,
+            "filter_timestep": cfg.current_time_idx if cfg.filter_future else -1,
             "separate_classes": False,
         }
 

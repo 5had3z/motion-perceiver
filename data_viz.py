@@ -12,7 +12,8 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from src.dataset.common import MotionDatasetConfig
 from src.dataset.interaction import InteractionConfig
 from src.dataset.waymo import WaymoDatasetConfig
-from src.dataset.pedestrian import PedestrianDatasetConfig
+from src.dataset.eth_ucy import ETHUCYDatasetConfig
+from src.dataset.sdd import SDDDatasetConfig
 import src.dataset.visualisation as dv
 import src.dataset.utils as du
 
@@ -20,16 +21,18 @@ import src.dataset.utils as du
 def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
     for data in loader:
         data: Dict[str, Tensor] = data[0]  # remove list dim
+        if "roadmap" not in data:
+            data["roadmap"] = torch.zeros((data["occupancy"].shape[0], 1, 100, 100))
         # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
         # dv.roadmap(data["roadmap"])
         # dv.optical_flow(data["flow"])
         dv.roadmap_and_occupancy(
-            torch.zeros((data["occupancy"].shape[0], 1, 100, 100)),
+            data["roadmap"],
             data["occupancy"],
             data.get("signals", None),
             roi_scale=config.occupancy_roi,
         )
-        dv.scatterplot_sequence(data, 10 // config.time_stride)
+        dv.scatterplot_sequence(data, 7)
         # dv.occupancy_from_current_pose(data)
 
         break
@@ -37,8 +40,8 @@ def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
 
 @inference_mode()
 def main():
-    batch_size = 1
-    datacfg = PedestrianDatasetConfig(
+    batch_size = 4
+    datacfg = SDDDatasetConfig(
         train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         val_loader=ModuleInitConfig(
             type="dali",
@@ -47,7 +50,7 @@ def main():
                 "augmentations": [ModuleInitConfig("random_rotate", {})],
             },
         ),
-        withheld="eth",
+        # withheld="eth",
         full_sequence=True,
         map_normalize=16.0,
         occupancy_size=256,

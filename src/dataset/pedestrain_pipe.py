@@ -1,15 +1,10 @@
-"""
-Conglomoration of ETH and UCY pedestrain datasets into a set of tfrecords.
-"""
-
-from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from subprocess import run
-from typing import Any, Dict, List, Tuple
+from typing import List
 
 import numpy as np
-from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
-from nvidia.dali import pipeline_def, Pipeline, fn, newaxis
+from konductor.init import ModuleInitConfig
+from nvidia.dali import pipeline_def, fn, newaxis
 from nvidia.dali.types import Constant, DALIDataType
 import nvidia.dali.tfrecord as tfrec
 import nvidia.dali.math as dmath
@@ -20,7 +15,6 @@ try:
         get_cache_record_idx_path,
         get_sample_idxs,
         dali_rad2deg,
-        VALID_AUG,
     )
 except ImportError:
     from common import (
@@ -28,49 +22,7 @@ except ImportError:
         get_cache_record_idx_path,
         get_sample_idxs,
         dali_rad2deg,
-        VALID_AUG,
     )
-
-PAST_FRAMES = 8
-FUTURE_FRAMES = 12
-SEQUENCE_LENGTH = PAST_FRAMES + FUTURE_FRAMES
-MAX_AGENTS = 83
-SUBSETS = {"eth", "hotel", "uni", "zara1", "zara2", "zara3", "students1", "students3"}
-
-
-@dataclass
-@DATASET_REGISTRY.register_module("pedestrian")
-class PedestrianDatasetConfig(MotionDatasetConfig):
-    withheld: str = field(kw_only=True)
-
-    def __post_init__(self):
-        super().__post_init__()
-        assert self.withheld in SUBSETS
-
-    @property
-    def properties(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        tfrecords = (
-            [s for s in SUBSETS if s != self.withheld]
-            if mode == Mode.train
-            else [self.withheld]
-        )
-        tfrecords = [t + ".tfrecord" for t in tfrecords]
-
-        output_map = ["agents", "agents_valid"]
-        if self.roadmap:
-            output_map.append("context")
-        if self.occupancy_size:
-            output_map.extend(["time_idx", "occupancy"])
-        if self.scenario_id:
-            output_map.append("scenario_id")
-
-        pipeline = pedestrian_pipe(
-            self.basepath, **kwargs, cfg=self, tfrecords=tfrecords
-        )
-        return pipeline, output_map, mode.name, -1
 
 
 @pipeline_def
@@ -79,18 +31,34 @@ def pedestrian_pipe(
     shard_id: int,
     num_shards: int,
     random_shuffle: bool,
-    cfg: PedestrianDatasetConfig,
+    cfg: MotionDatasetConfig,
     tfrecords: List[str],
+    split: str,
     augmentations: List[ModuleInitConfig],
 ):
     rec_features = {
-        "x": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "y": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "t": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "vx": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "vy": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "vt": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.float32, 0.0),
-        "valid": tfrec.FixedLenFeature([MAX_AGENTS, SEQUENCE_LENGTH], tfrec.int64, 0),
+        "type": tfrec.FixedLenFeature([cfg.max_agents], tfrec.int64, 0),
+        "x": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.float32, 0.0
+        ),
+        "y": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.float32, 0.0
+        ),
+        "t": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.float32, 0.0
+        ),
+        "vx": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.float32, 0.0
+        ),
+        "vy": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.float32, 0.0
+        ),
+        "vt": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.float32, 0.0
+        ),
+        "valid": tfrec.FixedLenFeature(
+            [cfg.max_agents, cfg.sequence_length], tfrec.int64, 0
+        ),
         "scenario_id": tfrec.FixedLenFeature([], tfrec.string, ""),
     }
 
@@ -111,7 +79,7 @@ def pedestrian_pipe(
         shard_id=shard_id,
         num_shards=num_shards,
         random_shuffle=random_shuffle,
-        name="train" if len(tfrecords) > 1 else "val",
+        name=split,
     )
 
     data_valid = fn.cast(inputs["valid"], dtype=DALIDataType.INT32)
@@ -124,7 +92,7 @@ def pedestrian_pipe(
 
     data_xy = fn.stack(inputs["x"], inputs["y"], axis=2)
     data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=rot_mat)
-    data_xy = fn.reshape(data_xy, shape=[MAX_AGENTS, SEQUENCE_LENGTH, 2])
+    data_xy = fn.reshape(data_xy, shape=[cfg.max_agents, cfg.sequence_length, 2])
 
     data_vxvy = fn.stack(inputs["vx"], inputs["vy"], axis=2)
     if cfg.velocity_norm != 1.0:
@@ -135,7 +103,7 @@ def pedestrian_pipe(
     else:
         vxvy_tf = rot_mat
     data_vxvy = fn.coord_transform(fn.reshape(data_vxvy, shape=[-1, 2]), MT=vxvy_tf)
-    data_vxvy = fn.reshape(data_vxvy, shape=[MAX_AGENTS, SEQUENCE_LENGTH, 2])
+    data_vxvy = fn.reshape(data_vxvy, shape=[cfg.max_agents, cfg.sequence_length, 2])
 
     if cfg.map_normalize > 0.0:
         data_xy /= cfg.map_normalize
@@ -175,7 +143,7 @@ def pedestrian_pipe(
         occ_kwargs = {
             "size": cfg.occupancy_size,
             "roi": cfg.occupancy_roi,
-            "filter_future": cfg.filter_future,
+            "filter_timestep": cfg.current_time_idx if cfg.filter_future else -1,
             "separate_classes": False,
             "circle_radius": 0.5 / cfg.map_normalize,
         }

@@ -21,6 +21,11 @@ VALID_AUG = {"random_rotate"}
 
 @dataclass
 class MotionDatasetConfig(DatasetConfig):
+    # These should be set by specific dataset
+    max_agents: int = field(init=False)
+    sequence_length: int = field(init=False)
+    current_time_idx: int = field(init=False)
+
     occupancy_size: int = field(kw_only=True)
     full_sequence: bool = False
     # Vehicle_features is order sensitive (this is ordering of channel concatenation)
