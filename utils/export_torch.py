@@ -1,5 +1,6 @@
 from typing import Dict, Set
 from pathlib import Path
+import gc
 
 import numpy as np
 import torch
@@ -46,3 +47,6 @@ def run_export(
     with LivePbar(total=len(scenario_ids), desc="Exporting") as pbar:
         for batch in yield_filtered_batch(dataloader, scenario_ids, batch_size):
             pbar.update(inference(model, batch[0], pred_path, gt_path))
+            del batch
+    gc.collect()
+    torch.cuda.empty_cache()

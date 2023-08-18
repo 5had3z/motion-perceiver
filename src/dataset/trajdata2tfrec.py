@@ -62,6 +62,7 @@ def show(name: str, root: Path):
         only_types=[AgentType.PEDESTRIAN],
         num_workers=4,
         verbose=True,
+        standardize_data=False,
         data_dirs=data_dirs,
     )
 
@@ -82,8 +83,15 @@ def show(name: str, root: Path):
 
 
 def get_dataset(
-    split: str, data_dirs: Dict[str, str], history: float, future: float, period: float
+    split: str,
+    data_dirs: Dict[str, str],
+    history: float,
+    future: float,
+    period: float,
+    max_agent: int | None = None,
 ) -> UnifiedDataset:
+    """Get scene-centric dataset which isn't
+    standardized with forwarded arguments"""
     dataset = UnifiedDataset(
         desired_data=[f"{d}-{split}" for d in data_dirs],
         centric="scene",
@@ -92,7 +100,9 @@ def get_dataset(
         future_sec=(future, future),
         num_workers=4,
         verbose=True,
+        standardize_data=False,
         data_dirs=data_dirs,
+        max_agent_num=max_agent,
     )
     return dataset
 
@@ -125,7 +135,7 @@ def process_batch_to_tfexample(
     """"""
     all_time = torch.cat([batch.agent_hist, batch.agent_fut], dim=2)
     bsz, n_agent, duration = all_time.shape[:3]
-    assert n_agent < max_agents, f"{n_agent=} exceeds {max_agents=}"
+    assert n_agent <= max_agents, f"{n_agent=} exceeds {max_agents=}"
 
     data = {k: torch.zeros((bsz, max_agents, duration)) for k in ["x", "y", "vx", "vy"]}
     for idx, k in enumerate(data):
@@ -157,19 +167,17 @@ def process_batch_to_tfexample(
     return tfexamples
 
 
-def create_tfrecord(writepath: Path, dataloader: DataLoader, max_agents: int):
+def create_tfrecord(
+    writer: tf.io.TFRecordWriter, dataloader: DataLoader, max_agents: int
+):
     """Run over dataloader, converting yielded data to tf.Example
-    write to tfrecord when finished"""
-
-    tf_examples: List[tf.train.Example] = []
+    and write to open tfrecordwriter"""
     with LivePbar(total=len(dataloader)) as pbar:
         for batch in dataloader:
-            tf_examples.extend(process_batch_to_tfexample(batch, max_agents))
+            samples = process_batch_to_tfexample(batch, max_agents)
+            for sample in samples:
+                writer.write(sample.SerializeToString())
             pbar.update(1)
-
-    with tf.io.TFRecordWriter(str(writepath)) as writer:
-        for sample in tf_examples:
-            writer.write(sample.SerializeToString())
 
 
 def write_metadata(
@@ -212,7 +220,7 @@ def make_tfrecords(
     data_dirs = get_subsets(name, root)
 
     for split in ["train", "val", "test"]:
-        dataset = get_dataset(split, data_dirs, history, future, period)
+        dataset = get_dataset(split, data_dirs, history, future, period, max_agents)
 
         print(f"# {split.capitalize()} Samples: {len(dataset):,}")
 
@@ -220,16 +228,19 @@ def make_tfrecords(
             dataset,
             batch_size=16,
             collate_fn=dataset.get_collate_fn(),
-            num_workers=12,
+            num_workers=cpu_count() // 2,
             shuffle=True,
         )
 
         tfrecord_file = dest / f"{name}_{split}.tfrecord"
-        create_tfrecord(tfrecord_file, dataloader, max_agents)
+        with tf.io.TFRecordWriter(str(tfrecord_file)) as writer:
+            create_tfrecord(writer, dataloader, max_agents)
+
         write_metadata(
             dest / "metadata.yaml", history, future, period, name, max_agents
         )
 
 
 if __name__ == "__main__":
-    app()
+    with torch.inference_mode():
+        app()
