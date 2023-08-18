@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 from copy import deepcopy
-from typing import List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional, Tuple
 import os
 import zlib
 
@@ -123,10 +123,13 @@ def _apply_sigmoid_to_occupancy_logits(
 
 def _read_prediction_file(numpy_file: Path) -> occupancy_flow_grids.WaypointGrids:
     """Read numpy file with logits and apply any extra transforms"""
-    prediction = np.load(numpy_file)
+    np_pred: np.ndarray = np.load(numpy_file)
     # Post process step on heatmap logits
-    prediction[0, prediction[0] < 0] *= 8.0
-    prediction = tf.convert_to_tensor(prediction)
+    np_pred[0, np_pred[0] < 0] *= 8.0
+    if np_pred.shape[0] > 1:  # Scale flow from m/s to pix/frame
+        np_pred[1:] *= -3.2
+
+    prediction = tf.convert_to_tensor(np_pred)
 
     pred_waypoint_logits = _get_pred_waypoint_logits(prediction)
 
@@ -224,9 +227,6 @@ def _get_validation_and_prediction(
     with tqdm(total=len(scenario_ids)) as pbar:
         for inputs in dataset:
             scenario_id = inputs["scenario/id"].numpy().astype(str)[0]
-            if scenario_id not in scenario_ids:
-                continue
-
             pytorch_gt_file = (
                 inference_blob_folder.parent.parent
                 / f"{split}_ground_truth"
@@ -280,7 +280,10 @@ def _get_validation_and_prediction(
 
             pbar.update(1)
             if pbar.n % 10 == 0:
-                pbar.set_description(f"{pt_stats} - {tf_stats}")
+                desc = f"{pt_stats} - {tf_stats}"
+                if len(flow) > 0:
+                    desc += f" EPE: {np.array(flow).mean():.2f}"
+                pbar.set_description(desc)
 
     return pt_stats, tf_stats
 
@@ -300,15 +303,21 @@ def evaluate_methods(id_path: Path, pred_path: Path, split, visualize: bool = Fa
     )
 
     filenames = tf.io.matching_files(str(data_shards))
+
+    with tf.io.gfile.GFile(id_path) as f:
+        scenario_ids = tf.constant([id.rstrip() for id in f.readlines()])
+
+    def valid_scenario_id(data: Dict[str, tf.Tensor]):
+        """TF doesn't have hashmap lookup which is lame"""
+        return tf.reduce_any(tf.equal(data["scenario/id"], scenario_ids))
+
     dataset = (
         tf.data.TFRecordDataset(filenames)
         .map(occupancy_flow_data.parse_tf_example, num_parallel_calls=4)
+        .filter(valid_scenario_id)
         .prefetch(4)
         .batch(1)
     )
-
-    with tf.io.gfile.GFile(id_path) as f:
-        scenario_ids = set(id.rstrip() for id in f.readlines())
 
     pt_stats, tf_stats = _get_validation_and_prediction(
         dataset, scenario_ids, pred_path, task_config, split, visualize
