@@ -5,7 +5,7 @@ from typing import List
 import numpy as np
 from konductor.init import ModuleInitConfig
 from nvidia.dali import pipeline_def, fn, newaxis
-from nvidia.dali.types import Constant, ConstantNode, DALIDataType
+from nvidia.dali.types import Constant, DALIDataType
 import nvidia.dali.tfrecord as tfrec
 import nvidia.dali.math as dmath
 
@@ -143,7 +143,14 @@ def pedestrian_pipe(
         outputs = fn.stride_slice(outputs, axis=1, stride=cfg.time_stride)
 
     if cfg.roadmap:
-        raise NotImplementedError()
+        ctx_image = fn.load_scene(
+            inputs["scenario_id"],
+            xy_tf,
+            src="",
+            metadata="",
+            size=cfg.roadmap_size,
+            channels=3,
+        )
 
     if cfg.occupancy_size > 0:
         time_idx = get_sample_idxs(cfg)
@@ -168,6 +175,6 @@ def pedestrian_pipe(
     outputs = [o.gpu() for o in outputs]
 
     if cfg.scenario_id:
-        outputs.append(fn.pad("scenario_id", fill_value=0))
+        outputs.append(fn.pad(inputs["scenario_id"], fill_value=0))
 
     return tuple(outputs)

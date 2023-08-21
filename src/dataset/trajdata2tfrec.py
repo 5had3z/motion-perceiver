@@ -234,7 +234,7 @@ def make_tfrecords(
         )
 
         tfrecord_file = dest / f"{name}_{split}.tfrecord"
-        with tf.io.TFRecordWriter(str(tfrecord_file), options="ZLIB") as writer:
+        with tf.io.TFRecordWriter(str(tfrecord_file)) as writer:
             create_tfrecord(writer, dataloader, max_agents)
 
         write_metadata(

@@ -59,7 +59,7 @@ protected:
 
         DALI_ENFORCE(mMarkingFlags != 0, "No roadgraph features have been selected to overlay");
 
-        // Two outputs: data and mask
+        // One output - rastered image
         output_desc.resize(1);
 
         // image output

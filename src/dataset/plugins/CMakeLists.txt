@@ -27,6 +27,8 @@ string(STRIP ${DALI_INCLUDE_DIR} DALI_INCLUDE_DIR)
 
 set(WARNING_OPTIONS "-Wall;-Wfatal-errors;-Wextra;-Wshadow;-Wpedantic")
 
+include(cmake/CPM.cmake)
+
 add_subdirectory(maskedops)
 
 add_subdirectory(maskfrompoly)
@@ -36,3 +38,5 @@ add_subdirectory(roadgraph)
 add_subdirectory(random)
 
 add_subdirectory(stride)
+
+add_subdirectory(scene_loader)
