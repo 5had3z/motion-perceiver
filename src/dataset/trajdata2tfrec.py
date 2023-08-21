@@ -150,7 +150,8 @@ def process_batch_to_tfexample(
     data["vt"] = torch.diff(data["t"], n=1, dim=-1)
     data["vt"] = torch.cat([data["vt"], data["vt"][..., [-1]]], dim=-1)
 
-    data["type"] = batch.agent_type
+    data["type"] = torch.zeros((bsz, max_agents), dtype=torch.int64)
+    data["type"][:, :n_agent] = batch.agent_type
     data["valid"] = torch.isfinite(data["x"]).to(torch.int64)
 
     for k in data:
@@ -233,7 +234,7 @@ def make_tfrecords(
         )
 
         tfrecord_file = dest / f"{name}_{split}.tfrecord"
-        with tf.io.TFRecordWriter(str(tfrecord_file)) as writer:
+        with tf.io.TFRecordWriter(str(tfrecord_file), options="ZLIB") as writer:
             create_tfrecord(writer, dataloader, max_agents)
 
         write_metadata(
