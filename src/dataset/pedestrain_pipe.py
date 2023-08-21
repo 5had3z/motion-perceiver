@@ -5,7 +5,7 @@ from typing import List
 import numpy as np
 from konductor.init import ModuleInitConfig
 from nvidia.dali import pipeline_def, fn, newaxis
-from nvidia.dali.types import Constant, DALIDataType
+from nvidia.dali.types import Constant, ConstantNode, DALIDataType
 import nvidia.dali.tfrecord as tfrec
 import nvidia.dali.math as dmath
 
@@ -87,11 +87,23 @@ def pedestrian_pipe(
     if any(a.type == "random_rotate" for a in augmentations):
         angle_rad = fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
     else:
-        angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
-    rot_mat = fn.transforms.rotation(angle=dali_rad2deg(angle_rad))
+        angle_rad = Constant(0.0, device="cpu", dtype=DALIDataType.FLOAT)
+    rot_mat = fn.transforms.rotation(
+        angle=fn.reshape(dali_rad2deg(angle_rad), shape=[])
+    )
+    if any(a.type == "center" for a in augmentations):
+        center = fn.transforms.translation(
+            offset=-fn.cat(
+                fn.masked_median(inputs["x"], data_valid),
+                fn.masked_median(inputs["y"], data_valid),
+            )
+        )
+    else:
+        center = Constant([0.0, 0.0], dtype=DALIDataType.FLOAT32)
+    xy_tf = fn.transforms.combine(center, rot_mat)
 
     data_xy = fn.stack(inputs["x"], inputs["y"], axis=2)
-    data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=rot_mat)
+    data_xy = fn.coord_transform(fn.reshape(data_xy, shape=[-1, 2]), MT=xy_tf)
     data_xy = fn.reshape(data_xy, shape=[cfg.max_agents, cfg.sequence_length, 2])
 
     data_vxvy = fn.stack(inputs["vx"], inputs["vy"], axis=2)

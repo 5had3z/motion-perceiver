@@ -118,7 +118,7 @@ def get_sample_idxs(cfg: MotionDatasetConfig):
 def dali_rad2deg(radians: DataNode) -> DataNode:
     """Convert radians to degrees 180 * rad / pi"""
     return (
-        Constant(180, dtype=DALIDataType.FLOAT)
+        Constant(180.0, dtype=DALIDataType.FLOAT)
         * radians
         / Constant(pi, dtype=DALIDataType.FLOAT)
     )
