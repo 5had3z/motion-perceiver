@@ -5,6 +5,7 @@ then I can serialise into tfrecord format that I want.
 """
 from pathlib import Path
 from multiprocessing import cpu_count
+import shutil
 from typing import Dict, List, Optional
 from typing_extensions import Annotated
 
@@ -240,6 +241,23 @@ def make_tfrecords(
         write_metadata(
             dest / "metadata.yaml", history, future, period, name, max_agents
         )
+
+
+@app.command()
+def copy_sdd_images(src: Path, dst: Path):
+    """Copies images from original sdd data structure to dst/scene_name.jpg"""
+    dst.mkdir(exist_ok=True)
+
+    image_paths: List[Path] = list(src.glob("annotations/**/*.jpg"))
+    with LivePbar(desc="Copying Images", total=len(image_paths)) as pbar:
+        for src_path in image_paths:
+            # Each image path is annotations/SCENE/videoX/reference.jpg
+            # We want to copy this to dst/SCENE_X.jpg
+            idx = int(src_path.parent.name.replace("video", ""))
+            name = src_path.parent.parent.name
+            dest_path = dst / f"{name}_{idx}.jpg"
+            shutil.copyfile(src_path, dest_path)
+            pbar.update(1)
 
 
 if __name__ == "__main__":
