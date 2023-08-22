@@ -16,9 +16,9 @@ execute_process(
     OUTPUT_VARIABLE DALI_COMPILE_FLAGS)
 string(STRIP ${DALI_COMPILE_FLAGS} DALI_COMPILE_FLAGS)
 
-# Extract define flags "-D.." from the compile flags
+# Extract define flags "-D.." from the compile flags, this is usually -D_GLIBCXX_USE_CXX11_ABI=0 
 string(REGEX MATCH "-D[A-Za-z0-9_=]+" DALI_DEFINE_FLAGS ${DALI_COMPILE_FLAGS})
-string(REPLACE "-D" "" DALI_DEFINE_FLAGS ${DALI_DEFINE_FLAGS})
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${DALI_DEFINE_FLAGS}")
 
 execute_process(
     COMMAND python3 -c "import nvidia.dali as dali; print(dali.sysconfig.get_include_dir())"

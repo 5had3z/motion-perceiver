@@ -24,8 +24,8 @@ public:
         : dali::Operator<Backend>(spec)
         , mImageChannels{spec.GetArgument<uint64_t>("channels")}
         , mImageSize{spec.GetArgument<uint64_t>("size")}
-        , mMetadataFile{spec.GetArgument<std::string>("src")}
-        , mImageFolder{spec.GetArgument<std::string>("metadata")}
+        , mMetadataFile{spec.GetArgument<std::string>("metadata")}
+        , mImageFolder{spec.GetArgument<std::string>("src")}
     {
     }
 

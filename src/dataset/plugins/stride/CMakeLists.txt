@@ -10,8 +10,6 @@ target_compile_options(
     $<$<CONFIG:Release>:-O3;-march=native;${WARNING_OPTIONS}>
 )
 
-target_compile_definitions(stride PRIVATE ${DALI_DEFINE_FLAGS})
-
 target_link_directories(stride PRIVATE ${DALI_LIB_DIR})
 
 target_include_directories(stride PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})

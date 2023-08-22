@@ -10,8 +10,6 @@ target_compile_options(
     $<$<CONFIG:Release>:-O3;-march=native;${WARNING_OPTIONS}>
 )
 
-target_compile_definitions(maskedops PRIVATE ${DALI_DEFINE_FLAGS})
-
 target_link_directories(maskedops PRIVATE ${DALI_LIB_DIR})
 
 target_include_directories(maskedops PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR})

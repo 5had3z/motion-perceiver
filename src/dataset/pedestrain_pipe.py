@@ -146,11 +146,12 @@ def pedestrian_pipe(
         ctx_image = fn.load_scene(
             inputs["scenario_id"],
             xy_tf,
-            src="",
-            metadata="",
+            src=str(cfg.basepath / "images"),
+            metadata=str(cfg.basepath / "images" / "image_metadata.yml"),
             size=cfg.roadmap_size,
             channels=3,
         )
+        outputs.append(ctx_image)
 
     if cfg.occupancy_size > 0:
         time_idx = get_sample_idxs(cfg)

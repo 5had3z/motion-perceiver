@@ -3,9 +3,9 @@ cmake_minimum_required(VERSION 3.21.3 FATAL_ERROR)
 find_package(OpenCV REQUIRED COMPONENTS imgproc)
 
 CPMAddPackage(
-    NAME yaml-cpp
     GIT_TAG 0.8.0
     GITHUB_REPOSITORY jbeder/yaml-cpp
+    OPTIONS "YAML_BUILD_SHARED_LIBS OFF"
 )
 
 add_library(scene_loader SHARED src.cpp)
@@ -17,8 +17,6 @@ target_compile_options(
     $<$<CONFIG:Debug>:-O0;-g;-march=native;${WARNING_OPTIONS}>
     $<$<CONFIG:Release>:-O3;-march=native;${WARNING_OPTIONS}>
 )
-
-target_compile_definitions(scene_loader PRIVATE ${DALI_DEFINE_FLAGS})
 
 target_link_directories(scene_loader PRIVATE ${DALI_LIB_DIR})
 

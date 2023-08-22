@@ -244,7 +244,9 @@ def make_tfrecords(
 
 
 @app.command()
-def copy_sdd_images(src: Path, dst: Path):
+def copy_sdd_images(
+    src: Path, dst: Path, metadata: Annotated[Optional[Path], typer.Option()] = None
+):
     """Copies images from original sdd data structure to dst/scene_name.jpg"""
     dst.mkdir(exist_ok=True)
 
@@ -258,6 +260,11 @@ def copy_sdd_images(src: Path, dst: Path):
             dest_path = dst / f"{name}_{idx}.jpg"
             shutil.copyfile(src_path, dest_path)
             pbar.update(1)
+
+    if metadata is None:
+        metadata = Path(__file__).parent / "sdd_metadata.yaml"
+    print(f"copying metadata file: {metadata}")
+    shutil.copyfile(metadata, dst / "image_metadata.yml")
 
 
 if __name__ == "__main__":
