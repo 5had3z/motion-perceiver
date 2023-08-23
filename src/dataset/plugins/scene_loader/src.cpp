@@ -1,5 +1,7 @@
 #include "src.hpp"
 
+#include <ranges>
+
 #include <yaml-cpp/yaml.h>
 
 namespace fs = std::filesystem;
@@ -23,6 +25,25 @@ void LoadScene<dali::CPUBackend>::loadMetadata()
 template <>
 void LoadScene<dali::CPUBackend>::RunImpl(dali::Workspace& ws)
 {
+    const auto& idTensor = ws.Input<dali::CPUBackend>(0);
+    const auto& tfTensor = ws.Input<dali::CPUBackend>(1);
+
+    auto& imageTensor = ws.Output<dali::CPUBackend>(0);
+
+    auto& tPool = ws.GetThreadPool();
+
+    namespace rv = std::ranges::views;
+
+    for (int sampleId = 0; sampleId < idTensor.num_samples(); ++sampleId)
+    {
+        const std::string rawId = static_cast<const char*>(idTensor[sampleId].raw_data());
+        // SceneId format should be SCENE_IDX_.., we want to just get SCENE_IDX
+        auto sceneId = rawId | rv::split('_') | rv::take(2) | rv::join_with('_') | rv::common;
+        std::string sceneIdS(sceneId.begin(), sceneId.end());
+
+        tPool.AddWork([&, sampleId](int) {});
+    }
+    tPool.RunAll();
 }
 
 } // namespace sceneloader

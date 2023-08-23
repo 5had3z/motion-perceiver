@@ -9,7 +9,7 @@ CPMAddPackage(
 )
 
 add_library(scene_loader SHARED src.cpp)
-target_compile_features(scene_loader PRIVATE cxx_std_17 c_std_11)
+target_compile_features(scene_loader PRIVATE cxx_std_23 c_std_11)
 
 target_compile_options(
     scene_loader
