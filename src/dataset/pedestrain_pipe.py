@@ -70,7 +70,10 @@ def pedestrian_pipe(
     for fragment in tfrecords:
         tfrec_idx = record_idx(fragment)
         if not tfrec_idx.exists():
-            run(["tfrecord2idx", str(record_root / fragment), str(tfrec_idx)])
+            run(
+                ["tfrecord2idx", str(record_root / fragment), str(tfrec_idx)],
+                check=True,
+            )
 
     inputs = fn.readers.tfrecord(
         path=[str(record_root / r) for r in tfrecords],

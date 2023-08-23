@@ -1,4 +1,3 @@
-from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -36,7 +35,7 @@ class InteractionSample:
     width: float
 
     @classmethod
-    def from_csv_line(cls, data: str) -> InteractionSample:
+    def from_csv_line(cls, data: str):
         """Create from a line of csv"""
         pargs = []
         for idx, sample in enumerate(data.split(",")):
@@ -64,6 +63,106 @@ class InteractionSample:
     def time_index(self) -> int:
         """Returns index of time sequence based of timestamp"""
         return self.ts_ms // 100 - 1
+
+
+class SplineType(Enum):
+    LANECENTER_FREEWAY = 1
+    LANECENTER_STREET = 2
+    LANECENTER_BIKE = 3
+    ROADLINE_BROKENSINGLEWHITE = 6
+    ROADLINE_SOLIDSINGLEWHITE = 7
+    ROADLINE_SOLIDDOUBLEWHITE = 8
+    ROADLINE_BROKENSINGLEYELLOW = 9
+    ROADLINE_BROKENDOUBLEYELLOW = 10
+    ROADLINE_SOLIDSINGLEYELLOW = 11
+    ROADLINE_SOLIDDOUBLEYELLOW = 12
+    ROADLINE_PASSINGDOUBLEYELLOW = 13
+    ROADEDGE_BOUNDARY = 15
+    ROADEDGE_MEDIAN = 16
+    STOPSIGN = 17
+    CROSSWALK = 18
+    SPEEDBUMP = 19
+
+    @classmethod
+    def from_xml(cls, xml_elem: ElementTree.ElementTree):
+        """Converts xml element to waymo enum"""
+        type_ = xml_elem.find('.//tag[@k="type"]').attrib["v"]
+
+        if type_ in {"line_thin", "line_thick"}:
+            enumstr = "ROADLINE_"
+            subtype_ = xml_elem.find('.//tag[@k="subtype"]').attrib["v"]
+
+            if subtype_ == "solid":
+                enumstr += "SOLIDSINGLE"
+            elif subtype_ == "dashed":
+                enumstr += "BROKENSINGLE"
+            elif subtype_ == "solid_solid":
+                enumstr += "SOLIDDOUBLE"
+            else:
+                raise AttributeError(f"Unidentified subtype {subtype_}")
+
+            color_ = xml_elem.find('.//tag[@k="color"]')
+            if color_ is None or color_.attrib["v"] == "white":
+                enumstr += "WHITE"
+            elif color_.attrib["v"] == "yellow":
+                enumstr += "YELLOW"
+            else:
+                raise AttributeError(f"Unidentified color {color_.attrib['v']}")
+
+            return cls[enumstr]
+
+        if type_ == "pedestrian_marking":
+            return cls["CROSSWALK"]
+
+        if type_ == "virtual":
+            return cls["LANECENTER_STREET"]
+
+        if type_ in {"road_border", "curbstone"}:
+            return cls["ROADEDGE_BOUNDARY"]
+
+        if type_ in {"traffic_sign", "stop_line", "guard_rail"}:
+            # Skipping traffic_signas I'm not sure how to handle it since
+            # the x,y,t of the sign isn't given, only its relation to lanes
+            return None
+
+        raise AttributeError(f"Unidentified type {type_}")
+
+
+@dataclass
+class InteractionSpline:
+    id: int
+    type: SplineType
+    points: np.ndarray
+
+
+@dataclass
+class InteractionMap:
+    name: str
+    splines: List[InteractionSpline] = field(default_factory=list)
+
+    def tf_serialise(self) -> Dict[str, np.ndarray]:
+        """
+        Returns serialised version of the map
+        required for dali loader {id, type, valid, xyz}
+        """
+        xyz = np.zeros((_MAX_ROADGRAPH, 3), dtype=int)
+        valid = np.zeros((_MAX_ROADGRAPH, 1), dtype=int)
+        uid = np.zeros((_MAX_ROADGRAPH, 1), dtype=int)
+        stype = np.zeros((_MAX_ROADGRAPH, 1), dtype=int)
+
+        start_idx = 0
+        for spline in self.splines:
+            end_idx = start_idx + spline.points.shape[0]
+            assert (
+                end_idx < _MAX_ROADGRAPH
+            ), f"MAX_ROADGRAPH needs to be increased, {end_idx=}>{_MAX_ROADGRAPH}"
+            xyz[start_idx:end_idx, 0:2] = spline.points
+            valid[start_idx:end_idx] = 1
+            uid[start_idx:end_idx] = spline.id
+            stype[start_idx:end_idx] = spline.type.value
+            start_idx = end_idx
+
+        return {"xyz": xyz, "valid": valid, "id": id, "type": stype}
 
 
 @dataclass
@@ -128,7 +227,7 @@ class InteractionRecord:
                     "state/valid":          tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_valid.flatten())),
                     "state/id":             tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_id.flatten())),
                     "state/type":           tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_type.flatten())),
-                    "roadgraph/xyz":         tf.train.Feature(float_list=tf.train.FloatList(value=self.roadgraph_xyz.flatten())),
+                    "roadgraph/xyz":        tf.train.Feature(float_list=tf.train.FloatList(value=self.roadgraph_xyz.flatten())),
                     "roadgraph/valid":      tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_valid.flatten())),
                     "roadgraph/id":         tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_id.flatten())),
                     "roadgraph/type":       tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_type.flatten())),
@@ -137,110 +236,6 @@ class InteractionRecord:
             )
         )
         return tf_sample.SerializeToString()
-
-
-class SplineType(Enum):
-    LANECENTER_FREEWAY = 1
-    LANECENTER_STREET = 2
-    LANECENTER_BIKE = 3
-    ROADLINE_BROKENSINGLEWHITE = 6
-    ROADLINE_SOLIDSINGLEWHITE = 7
-    ROADLINE_SOLIDDOUBLEWHITE = 8
-    ROADLINE_BROKENSINGLEYELLOW = 9
-    ROADLINE_BROKENDOUBLEYELLOW = 10
-    ROADLINE_SOLIDSINGLEYELLOW = 11
-    ROADLINE_SOLIDDOUBLEYELLOW = 12
-    ROADLINE_PASSINGDOUBLEYELLOW = 13
-    ROADEDGE_BOUNDARY = 15
-    ROADEDGE_MEDIAN = 16
-    STOPSIGN = 17
-    CROSSWALK = 18
-    SPEEDBUMP = 19
-
-    @classmethod
-    def from_xml(cls, xml_elem: ElementTree.ElementTree):
-        """Converts xml element to waymo enum"""
-        type_ = xml_elem.find('.//tag[@k="type"]').attrib["v"]
-
-        if type_ in ["line_thin", "line_thick"]:
-            enumstr = "ROADLINE_"
-            subtype_ = xml_elem.find('.//tag[@k="subtype"]').attrib["v"]
-
-            if subtype_ == "solid":
-                enumstr += "SOLIDSINGLE"
-            elif subtype_ == "dashed":
-                enumstr += "BROKENSINGLE"
-            elif subtype_ == "solid_solid":
-                enumstr += "SOLIDDOUBLE"
-            else:
-                raise AttributeError(f"Unidentified subtype {subtype_}")
-
-            color_ = xml_elem.find('.//tag[@k="color"]')
-            if color_ is None or color_.attrib["v"] == "white":
-                enumstr += "WHITE"
-            elif color_.attrib["v"] == "yellow":
-                enumstr += "YELLOW"
-            else:
-                raise AttributeError(f"Unidentified color {color_.attrib['v']}")
-
-            return cls[enumstr]
-
-        elif type_ == "pedestrian_marking":
-            return cls["CROSSWALK"]
-
-        elif type_ == "virtual":
-            return cls["LANECENTER_STREET"]
-
-        elif type_ in ["road_border", "curbstone"]:
-            return cls["ROADEDGE_BOUNDARY"]
-
-        elif type_ in [
-            "traffic_sign",
-            "stop_line",
-            "guard_rail",
-        ]:
-            # Skipping traffic_signas I'm not sure how to handle it since
-            # the x,y,t of the sign isn't given, only its relation to lanes
-            return None
-        else:
-            raise AttributeError(f"Unidentified type {type_}")
-
-
-@dataclass
-class InteractionSpline:
-    id: int
-    type: SplineType
-    points: np.ndarray
-
-
-@dataclass
-class InteractionMap:
-    name: str
-    splines: List[InteractionSpline] = field(default_factory=list)
-
-    def tf_serialise(self) -> Dict[str, np.ndarray]:
-        """
-        Returns serialised version of the map
-        required for dali loader {id, type, valid, xyz}
-        """
-        xyz = np.zeros((_MAX_ROADGRAPH, 3), dtype=int)
-        valid = np.zeros((_MAX_ROADGRAPH, 1), dtype=int)
-        id = np.zeros((_MAX_ROADGRAPH, 1), dtype=int)
-        stype = np.zeros((_MAX_ROADGRAPH, 1), dtype=int)
-
-        start_idx = 0
-        for spline in self.splines:
-            end_idx = start_idx + spline.points.shape[0]
-            assert (
-                end_idx < _MAX_ROADGRAPH
-            ), f"MAX_ROADGRAPH needs to be increased, {end_idx=}>{_MAX_ROADGRAPH}"
-            xyz[start_idx:end_idx, 0:2] = spline.points
-            valid[start_idx:end_idx] = 1
-            id[start_idx:end_idx] = spline.id
-            stype[start_idx:end_idx] = spline.type.value
-            start_idx = end_idx
-
-        return {"xyz": xyz, "valid": valid, "id": id, "type": stype}
 
 
 def construct_spline(
@@ -286,7 +281,7 @@ def get_map_path(csv_file: Path) -> Path:
 
 
 def parse_csv_to_datasets(file_idx: int, csv_file: Path) -> List[InteractionRecord]:
-    """"""
+    """Convert raw interaction data to list of records"""
     tf_datasets: Dict[int, InteractionRecord] = {}
     print(f"Started [{file_idx}]: {csv_file.name}")
 
@@ -301,8 +296,8 @@ def parse_csv_to_datasets(file_idx: int, csv_file: Path) -> List[InteractionReco
                 tf_datasets[sample.case] = InteractionRecord(sample.case)
             tf_datasets[sample.case].add_sample(sample)
 
-    for dataset in tf_datasets:
-        tf_datasets[dataset].add_roadgraph_tf(imap)
+    for dataset in tf_datasets.values():
+        dataset.add_roadgraph_tf(imap)
 
     print(f"Finished Parsing [{file_idx}]: {csv_file.name}")
 
@@ -349,7 +344,7 @@ def split_to_record(split_folder: Path, output_rec: Path) -> None:
 
 
 def run_mp(data_root: Path, output_path: Path) -> None:
-    """"""
+    """Run dataset generation in parallel thread pool"""
     mp = get_context("spawn").Pool(processes=2)
     for split in ["train", "val"]:
         split_folder = data_root / split
@@ -360,7 +355,7 @@ def run_mp(data_root: Path, output_path: Path) -> None:
 
 
 def run_serial(data_root: Path, output_path: Path) -> None:
-    """"""
+    """Run dataset generation in single thread"""
     for split in ["val", "train"]:
         split_folder = data_root / split
         record_path = output_path / f"interaction_{split}.tfrecord"
@@ -374,8 +369,7 @@ def convert_dataset() -> None:
     args = parser.parse_args()
 
     tf_dir: Path = args.root / "tfrecord"
-    if not tf_dir.exists():
-        tf_dir.mkdir()
+    tf_dir.mkdir(exist_ok=True)
 
     run_mp(args.root, tf_dir)
 

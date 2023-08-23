@@ -102,7 +102,7 @@ def interation_pipeline(
     tfrec_idx = tfrec_idx_root / f"{record_file.name}.idx"
 
     if not tfrec_idx.exists():
-        run(["tfrecord2idx", str(record_file), str(tfrec_idx)])
+        run(["tfrecord2idx", str(record_file), str(tfrec_idx)], check=True)
 
     inputs = fn.readers.tfrecord(
         path=str(record_file),
@@ -114,7 +114,7 @@ def interation_pipeline(
         name=record_file.stem,
     )
 
-    data_valid = fn.cast(inputs[f"state/valid"], dtype=DALIDataType.INT32)
+    data_valid = fn.cast(inputs["state/valid"], dtype=DALIDataType.INT32)
 
     data_xy = fn.stack(inputs["state/x"], inputs["state/y"], axis=2)
     # Center coordinate system based off vehicles
@@ -230,4 +230,4 @@ def interation_pipeline(
         if cfg.flow_mask:
             outputs.append(fn.flow_mask(data_all, data_valid, time_idx, **occ_kwargs))
 
-    return tuple([o.gpu() for o in outputs])
+    return tuple(o.gpu() for o in outputs)
