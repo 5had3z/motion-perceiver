@@ -3,6 +3,8 @@
 """Show the output of the dataloader
 to validate its doing the right thing"""
 from typing import Dict
+from pathlib import Path
+import os
 
 import torch
 from torch import Tensor, inference_mode
@@ -19,6 +21,10 @@ import src.dataset.utils as du
 
 
 def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
+    dump_dir = Path("viz_data")
+    dump_dir.mkdir(exist_ok=True)
+    os.chdir(dump_dir)
+
     for data in loader:
         data: Dict[str, Tensor] = data[0]  # remove list dim
         # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])

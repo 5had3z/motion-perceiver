@@ -162,4 +162,5 @@ dmypy.json
 .pyre/
 
 .vscode
-checkpoints 
+checkpoints
+viz_data
