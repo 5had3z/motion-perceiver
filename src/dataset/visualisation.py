@@ -9,6 +9,16 @@ from matplotlib import pyplot as plt
 from torchvision.utils import flow_to_image
 
 
+def context_image_occupancy(context: Tensor, occupancy: Tensor):
+    """Render occupancy as blue on the context image"""
+    # Write images
+    for i, (context_, occupancy_) in enumerate(zip(context, occupancy)):
+        for tidx, occ_t in enumerate(occupancy_[0]):
+            ctx = cv2.cvtColor(context_.cpu().numpy(), cv2.COLOR_RGB2BGR)
+            ctx[occ_t.cpu() > 0] = np.array([255, 0, 0])
+            cv2.imwrite(f"context_ocupancy_{i}_{tidx}.png", ctx)
+
+
 def occupancy_sequence(data: Dict[str, Tensor]):
     """Print images of occpancy for each class over time"""
     for i, (heatmap, bt_idx) in enumerate(zip(data["heatmap"], data["time_idx"])):

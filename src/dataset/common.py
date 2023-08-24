@@ -38,7 +38,7 @@ class MotionDatasetConfig(DatasetConfig):
     random_heatmap_count: int = 0
     random_heatmap_stride: int = 1
     random_heatmap_piecewise: List[Dict[str, int]] = field(default_factory=list)
-    roadmap_size: int | None = None
+    roadmap_size: int = 0
     # How to scale the occupancy roi, whole image => 1, center crop => 0.5
     occupancy_roi: float = 1.0
     flow_mask: bool = False
@@ -53,7 +53,7 @@ class MotionDatasetConfig(DatasetConfig):
         return props
 
     def __post_init__(self):
-        if self.roadmap_size is None:
+        if self.roadmap_size == 0:
             self.roadmap_size = self.occupancy_size
 
 

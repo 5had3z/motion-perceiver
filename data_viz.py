@@ -21,17 +21,18 @@ import src.dataset.utils as du
 def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
     for data in loader:
         data: Dict[str, Tensor] = data[0]  # remove list dim
-        if "roadmap" not in data:
-            data["roadmap"] = torch.zeros((data["occupancy"].shape[0], 1, 100, 100))
         # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
         # dv.roadmap(data["roadmap"])
         # dv.optical_flow(data["flow"])
-        dv.roadmap_and_occupancy(
-            data["roadmap"],
-            data["occupancy"],
-            data.get("signals", None),
-            roi_scale=config.occupancy_roi,
-        )
+        if "roadmap" in data:
+            dv.roadmap_and_occupancy(
+                data["roadmap"],
+                data["occupancy"],
+                data.get("signals", None),
+                roi_scale=config.occupancy_roi,
+            )
+        if "context" in data:
+            dv.context_image_occupancy(data["context"], data["occupancy"])
         dv.scatterplot_sequence(data, 7)
         # dv.occupancy_from_current_pose(data)
 
@@ -47,7 +48,7 @@ def main():
             type="dali",
             args={
                 "batch_size": batch_size,
-                "augmentations": [ModuleInitConfig("center", {})],
+                # "augmentations": [ModuleInitConfig("center", {})],
             },
         ),
         # withheld="eth",

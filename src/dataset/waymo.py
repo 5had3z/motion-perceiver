@@ -49,7 +49,7 @@ class WaymoDatasetConfig(MotionDatasetConfig):
     def __post_init__(self):
         if self.heatmap_time is None:
             self.heatmap_time = [10] if self.full_sequence else [0]
-        if self.roadmap_size is None:
+        if self.roadmap_size == 0:
             self.roadmap_size = self.occupancy_size
 
     def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
