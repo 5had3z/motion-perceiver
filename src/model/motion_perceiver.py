@@ -5,8 +5,12 @@ from functools import reduce
 
 import einops
 import torch
-from torchdiffeq import odeint
 from torch import nn, Tensor
+
+try:
+    from torchdiffeq import odeint
+except ModuleNotFoundError:
+    pass  # Only needed for ode model
 
 from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA, RasterEncoder
 from ._oadapter import (
