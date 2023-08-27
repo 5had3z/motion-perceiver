@@ -136,12 +136,13 @@ def process_batch_to_tfexample(
     batch: SceneBatch, max_agents: int
 ) -> List[tf.train.Example]:
     """"""
+    batch.to("cuda")
     all_time = torch.cat([batch.agent_hist, batch.agent_fut], dim=2)
     bsz, n_agent, duration = all_time.shape[:3]
     assert n_agent <= max_agents, f"{n_agent=} exceeds {max_agents=}"
 
     data = {
-        k: torch.full((bsz, max_agents, duration), torch.nan)
+        k: torch.full((bsz, max_agents, duration), torch.nan, device="cuda")
         for k in ["x", "y", "vx", "vy"]
     }
     for idx, k in enumerate(data):
@@ -156,7 +157,7 @@ def process_batch_to_tfexample(
     data["vt"] = torch.diff(data["t"], n=1, dim=-1)
     data["vt"] = torch.cat([data["vt"], data["vt"][..., [-1]]], dim=-1)
 
-    data["type"] = torch.zeros((bsz, max_agents), dtype=torch.int64)
+    data["type"] = torch.zeros((bsz, max_agents), dtype=torch.int64, device="cuda")
     data["type"][:, :n_agent] = batch.agent_type
     data["valid"] = torch.isfinite(data["x"]).to(torch.int64)
 

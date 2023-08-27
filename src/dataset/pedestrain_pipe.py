@@ -95,7 +95,20 @@ def pedestrian_pipe(
         angle=fn.reshape(dali_rad2deg(angle_rad), shape=[])
     )
 
-    if any(a.type == "center" for a in augmentations):
+    if cfg.roadmap:
+        # Since the coordinate origin is the the top-left of
+        # the context image, we must change that to the center
+        ctx_image, source_px_per_m = fn.load_scene(
+            inputs["scenario_id"],
+            src=str(cfg.basepath / "images"),
+            metadata=str(cfg.basepath / "images" / "image_metadata.yml"),
+        )
+        ctx_image = fn.decoders.image(ctx_image, device="cpu")
+        img_shape = (
+            fn.shapes(ctx_image, dtype=DALIDataType.FLOAT)[:-1] / 2 / -source_px_per_m
+        )
+        center = fn.stack(img_shape[1], img_shape[0])
+    elif any(a.type == "center" for a in augmentations):
         center = -fn.cat(
             fn.masked_median(inputs["x"], data_valid),
             fn.masked_median(inputs["y"], data_valid),
@@ -146,17 +159,8 @@ def pedestrian_pipe(
         outputs = fn.stride_slice(outputs, axis=1, stride=cfg.time_stride)
 
     if cfg.roadmap:
-        # Read Image with Pixel per Meter Scale
-        ctx_image, source_px_per_m = fn.load_scene(
-            inputs["scenario_id"],
-            src=str(cfg.basepath / "images"),
-            metadata=str(cfg.basepath / "images" / "image_metadata.yml"),
-        )
-        ctx_image = fn.decoders.image(ctx_image, device="cpu")
-
         # Normalize Pixel Per Meter
         target_px_per_m = cfg.roadmap_size / (cfg.map_normalize * 2)
-        print(target_px_per_m)
         rescale_ratio = target_px_per_m / source_px_per_m
         img_shape = fn.shapes(ctx_image, dtype=DALIDataType.FLOAT)[:-1]
         scaled_shape = img_shape * rescale_ratio
@@ -177,16 +181,14 @@ def pedestrian_pipe(
         )
 
         # Transform affine from meters to pixels
-        xy_tf_px = fn.transforms.translation(offset=center * target_px_per_m)
         xy_rot = fn.transforms.rotation(
             angle=fn.reshape(dali_rad2deg(angle_rad), shape=[]), center=out_shape / 2
         )
-        img_tf = fn.transforms.combine(xy_tf_px, xy_rot)
 
         # Apply Warp Affine
         ctx_image = fn.warp_affine(
             ctx_image,
-            img_tf,
+            xy_rot,
             interp_type=DALIInterpType.INTERP_LINEAR,
             inverse_map=False,
         )
