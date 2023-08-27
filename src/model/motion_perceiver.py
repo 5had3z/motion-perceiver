@@ -2,10 +2,17 @@ from typing import Any, Dict, List, Tuple, Set
 from pathlib import Path
 import random
 from functools import reduce
+from copy import deepcopy
 
 import einops
 import torch
 from torch import nn, Tensor
+from torch.distributed import scatter_object_list
+from konductor.utilities.comm import (
+    is_main_process,
+    in_distributed_mode,
+    get_world_size,
+)
 
 try:
     from torchdiffeq import odeint
@@ -468,15 +475,24 @@ class MotionEncoder3Ctx(MotionEncoder3):
 
         print(f"Finished {type(self).__name__} Export")
 
-    def get_input_indicies(
-        self,
-    ) -> Set[int]:
+    def get_input_indicies(self) -> Set[int]:
         """get input indicies, randomly generate if required"""
-        input_indicies = self.input_indicies
+        input_indicies = deepcopy(self.input_indicies)
         if self.random_input_indicies > 0 and self.training:
             candidates = list(range(min(input_indicies), max(input_indicies)))
             random.shuffle(candidates)
             input_indicies.update(candidates[: self.random_input_indicies])
+
+            # Scatter random samples consistently if in distributed mode
+            if in_distributed_mode():
+                if is_main_process():
+                    dist_list = [input_indicies] * get_world_size()
+                else:
+                    dist_list = None
+                out = [None]
+                scatter_object_list(out, dist_list, src=0)
+                input_indicies = set(out[0])
+
         return input_indicies
 
     def encode_road(

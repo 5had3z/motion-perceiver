@@ -46,4 +46,4 @@ COPY --chown=worker:worker . .
 RUN cd src/dataset/plugins && \
     CC=/usr/bin/gcc-13 CXX=/usr/bin/g++-13 \
     cmake -B build -G Ninja && \
-    cmake --build build --parallel
+    cmake --build build --parallel --config Release
