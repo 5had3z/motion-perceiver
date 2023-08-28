@@ -1,5 +1,4 @@
 from pathlib import Path
-from subprocess import run
 from typing import List
 
 import numpy as np
@@ -12,14 +11,14 @@ import nvidia.dali.math as dmath
 try:
     from .common import (
         MotionDatasetConfig,
-        get_cache_record_idx_path,
+        get_tfrecord_cache,
         get_sample_idxs,
         dali_rad2deg,
     )
 except ImportError:
     from common import (
         MotionDatasetConfig,
-        get_cache_record_idx_path,
+        get_tfrecord_cache,
         get_sample_idxs,
         dali_rad2deg,
     )
@@ -62,22 +61,11 @@ def pedestrian_pipe(
         "scenario_id": tfrec.FixedLenFeature([], tfrec.string, ""),
     }
 
-    tfrec_idx_root = get_cache_record_idx_path(record_root)
-
-    def record_idx(tf_record: str) -> Path:
-        return tfrec_idx_root / f"{tf_record}.idx"
-
-    for fragment in tfrecords:
-        tfrec_idx = record_idx(fragment)
-        if not tfrec_idx.exists():
-            run(
-                ["tfrecord2idx", str(record_root / fragment), str(tfrec_idx)],
-                check=True,
-            )
+    tfrecord_caches = get_tfrecord_cache(record_root, tfrecords)
 
     inputs = fn.readers.tfrecord(
         path=[str(record_root / r) for r in tfrecords],
-        index_path=[str(record_idx(r)) for r in tfrecords],
+        index_path=tfrecord_caches,
         features=rec_features,
         shard_id=shard_id,
         num_shards=num_shards,

@@ -2,11 +2,21 @@ from dataclasses import dataclass, asdict, field
 from typing import Any, Dict, List, Tuple
 from pathlib import Path
 from math import pi
+from subprocess import run
+from multiprocessing import Pool, cpu_count
+import logging
 
+from torch.distributed import scatter_object_list
 from nvidia.dali import fn
 from nvidia.dali.data_node import DataNode
 from nvidia.dali.types import DALIDataType, Constant
 from konductor.data import DatasetConfig
+from konductor.utilities.comm import (
+    get_local_rank,
+    synchronize,
+    in_distributed_mode,
+    get_world_size,
+)
 
 # fmt: off
 ALL_FEATURES = [
@@ -62,9 +72,12 @@ def get_cache_record_idx_path(dataset_path: Path) -> Path:
     Initially try to make with tf record dali index
     in folder adjacent to dataset suffixed by idx.
     If that fails due to permission requirements, make in /tmp.
+    Only local rank 0 handles the creation logic, the result is shared
+    with the rest of the nodes.
     """
     dali_idx_path = dataset_path.parent / f"{dataset_path.name}_dali_idx"
-    if not dali_idx_path.exists():
+
+    if not dali_idx_path.exists() and get_local_rank() == 0:
         try:
             dali_idx_path.mkdir()
             return dali_idx_path
@@ -78,7 +91,40 @@ def get_cache_record_idx_path(dataset_path: Path) -> Path:
             if not dali_idx_path.exists():
                 dali_idx_path.mkdir()
 
+    # The result from local rank 0 should be the same on each
+    # node, so it should be fine if global rank 0 broadcasts
+    if in_distributed_mode():
+        tmp = [None]
+        scatter_object_list(tmp, [dali_idx_path] * get_world_size())
+        dali_idx_path: Path = tmp[0]
+
     return dali_idx_path
+
+
+def get_tfrecord_cache(record_root: Path, tfrecords: List[str]) -> List[str]:
+    """Get the list of paths of tfrecord indexes
+    and create the index if necessary"""
+    # Get the path to the record index folder
+    tfrec_idx_root = get_cache_record_idx_path(record_root)
+
+    # Create the path to each index
+    tfrec_idxs = [tfrec_idx_root / f"{tfrec}.idx" for tfrec in tfrecords]
+
+    # Check if index exists, write if necessary
+    proc_args = []
+    for tfrec, idx in zip(tfrecords, tfrec_idxs):
+        if not idx.exists():
+            proc_args.append(["tfrecord2idx", str(record_root / tfrec), str(idx)])
+
+    if len(proc_args) > 0 and get_local_rank() == 0:
+        logging.info("Creating %d DALI TFRecord Indexes", len(proc_args))
+        with Pool(processes=cpu_count() // 2) as mp:
+            mp.map(run, proc_args)
+
+    # Ensure distributed-parallel sync
+    synchronize()
+
+    return [str(f) for f in tfrec_idxs]
 
 
 def get_sample_idxs(cfg: MotionDatasetConfig):

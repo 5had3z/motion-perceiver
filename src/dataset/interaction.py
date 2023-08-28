@@ -2,7 +2,6 @@
 """
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from subprocess import run
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -14,7 +13,7 @@ import nvidia.dali.tfrecord as tfrec
 
 try:
     from .common import (
-        get_cache_record_idx_path,
+        get_tfrecord_cache,
         MotionDatasetConfig,
         get_sample_idxs,
         VALID_AUG,
@@ -22,7 +21,7 @@ try:
     )
 except ImportError:
     from common import (
-        get_cache_record_idx_path,
+        get_tfrecord_cache,
         MotionDatasetConfig,
         get_sample_idxs,
         VALID_AUG,
@@ -98,15 +97,11 @@ def interation_pipeline(
     features_description.update(roadgraph_features)
     features_description.update(state_features)
 
-    tfrec_idx_root = get_cache_record_idx_path(record_file.parent)
-    tfrec_idx = tfrec_idx_root / f"{record_file.name}.idx"
-
-    if not tfrec_idx.exists():
-        run(["tfrecord2idx", str(record_file), str(tfrec_idx)], check=True)
+    tfrec_idx = get_tfrecord_cache(record_file.parent, [record_file.name])[0]
 
     inputs = fn.readers.tfrecord(
         path=str(record_file),
-        index_path=str(tfrec_idx),
+        index_path=tfrec_idx,
         features=features_description,
         shard_id=shard_id,
         num_shards=num_shards,

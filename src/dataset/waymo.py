@@ -1,6 +1,4 @@
 from dataclasses import dataclass, asdict
-from subprocess import run
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 import math
 from typing import Any, Dict, List, Tuple
@@ -13,7 +11,7 @@ import nvidia.dali.tfrecord as tfrec
 from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
 
 from .common import (
-    get_cache_record_idx_path,
+    get_tfrecord_cache,
     MotionDatasetConfig,
     get_sample_idxs,
     VALID_AUG,
@@ -171,25 +169,13 @@ def waymo_motion_pipe(
     features_description.update(traffic_light_features)
     features_description["scenario/id"] = tfrec.FixedLenFeature([], tfrec.string, "")
 
-    tfrec_idx_root = get_cache_record_idx_path(record_root)
-
-    def tfrecord_idx(tf_record: Path) -> Path:
-        return tfrec_idx_root / f"{tf_record.name}.idx"
-
-    proc_args = []
-
-    for record_fragment in record_root.iterdir():
-        tfrec_idx = tfrecord_idx(record_fragment)
-        if not tfrec_idx.exists():
-            proc_args.append(["tfrecord2idx", str(record_fragment), str(tfrec_idx)])
-
-    # Very IO intense (parsing 100's GB) better be NVMe
-    with Pool(processes=cpu_count() // 2) as mp:
-        mp.map(run, proc_args)
+    tfrec_idxs = get_tfrecord_cache(
+        record_root, [r.name for r in record_root.iterdir()]
+    )
 
     inputs = fn.readers.tfrecord(
         path=[str(rec) for rec in record_root.iterdir()],
-        index_path=[str(tfrecord_idx(rec)) for rec in record_root.iterdir()],
+        index_path=tfrec_idxs,
         features=features_description,
         shard_id=shard_id,
         num_shards=num_shards,

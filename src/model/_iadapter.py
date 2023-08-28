@@ -4,7 +4,7 @@
 import math
 import enum
 from typing import Dict, List, Tuple, Sequence
-from warnings import warn
+import logging
 
 import einops
 import torch
@@ -250,7 +250,7 @@ class TrafficIA(InputAdapter):
         random_mask: float = 0.0,
     ):
         if any(n == 0 for n in [yaw_n_bands, map_n_bands]):
-            warn(
+            logging.warning(
                 "Using num_frequency_bands is depricated,"
                 "please use individual map and yaw arguments"
             )
