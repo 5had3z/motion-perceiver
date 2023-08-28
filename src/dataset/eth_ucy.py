@@ -48,9 +48,9 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
 
         output_map = ["agents", "agents_valid"]
         if self.roadmap:
-            output_map.append("context")
+            output_map.append("roadmap")
         if self.occupancy_size:
-            output_map.extend(["time_idx", "occupancy"])
+            output_map.extend(["time_idx", "heatmap"])
         if self.scenario_id:
             output_map.append("scenario_id")
 

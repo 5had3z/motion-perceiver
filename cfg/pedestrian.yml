@@ -1,20 +1,17 @@
 dataset:
-  - type: pedestrian
+  - type: sdd
     args:
-      map_normalize: 80.0
+      map_normalize: 30.0
       full_sequence: true
       occupancy_size: 256
       filter_future: true
-      signal_features: true
       roadmap: true
       roadmap_size: 256
-      use_sdc_frame: true
-      waymo_eval_frame: true
-      heatmap_time: [0, 10]
-      random_heatmap_minmax: [1, 60]
+      heatmap_time: [0, 14]
+      random_heatmap_minmax: [1, 43]
       random_heatmap_count: 3
-      only_vehicles: true
       occupancy_roi: 0.5
+      time_stride: 2
     loader:
       type: DALI
       args:
@@ -24,12 +21,9 @@ criterion:
   - type: occupancy_focal
     args:
       alpha: 0.95
-  - type: signal_prediction
-    args: {}
 model:
   - type: motion-perceiver
     args:
-      signal_decoder: true
       encoder:
         version: 7
         num_latents: 128
@@ -43,19 +37,13 @@ model:
             map_n_bands: 32
             yaw_n_bands: 8
             yaw_max_freq: 16.0
-        signal_ia:
-          type: signal
-          args:
-            onehot: true
-            input_mode: fpos
-            num_frequency_bands: 32
         roadgraph_ia:
-          type: image
+          type: conv1
           args:
-            in_channels: 1
+            raster_ch: 3
+            conv_ch: 128
             num_frequency_bands: 16
-            patchify: 32
-            conv_1x1: 190
+            avg_pool_shape: [8, 8]
       decoder:
         position_encoding_type: fourier
         num_frequency_bands: 32

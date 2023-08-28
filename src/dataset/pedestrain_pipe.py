@@ -192,6 +192,21 @@ def pedestrian_pipe(
             interp_type=DALIInterpType.INTERP_LINEAR,
             inverse_map=False,
         )
+
+        # Transpose image to CHW and Normalize
+        ctx_image = fn.cast(
+            fn.transpose(ctx_image, perm=[2, 0, 1]), dtype=DALIDataType.FLOAT
+        ) / Constant(255, dtype=DALIDataType.FLOAT)
+        ctx_image = fn.normalize(
+            ctx_image,
+            mean=Constant(
+                [0.485, 0.456, 0.406], dtype=DALIDataType.FLOAT, shape=[3, 1, 1]
+            ),
+            stddev=Constant(
+                [0.229, 0.224, 0.225], dtype=DALIDataType.FLOAT, shape=[3, 1, 1]
+            ),
+        )
+
         outputs.append(ctx_image)
 
     if cfg.occupancy_size > 0:

@@ -2,7 +2,7 @@
 Stanford drone dataset
 """
 from math import ceil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Tuple
 
 from konductor.data import DATASET_REGISTRY, Mode
@@ -12,10 +12,20 @@ import yaml
 from .common import MotionDatasetConfig
 from .pedestrain_pipe import pedestrian_pipe
 
+# fmt: off
+_ALL_FEATURES =  [
+    "x", "y","bbox_yaw",
+    "velocity_x", "velocity_y",
+    "vel_yaw", "class",
+]
+# fmt: on
+
 
 @dataclass
 @DATASET_REGISTRY.register_module("sdd")
 class SDDDatasetConfig(MotionDatasetConfig):
+    vehicle_features: List[str] = field(default_factory=lambda: _ALL_FEATURES)
+
     def __post_init__(self):
         with open(self.basepath / "metadata.yaml", "r", encoding="utf-8") as f:
             metadata = yaml.safe_load(f)
@@ -37,7 +47,7 @@ class SDDDatasetConfig(MotionDatasetConfig):
         if self.roadmap:
             output_map.append("roadmap")
         if self.occupancy_size:
-            output_map.extend(["time_idx", "occupancy"])
+            output_map.extend(["time_idx", "heatmap"])
         if self.scenario_id:
             output_map.append("scenario_id")
 
