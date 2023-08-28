@@ -35,7 +35,7 @@ class SDDDatasetConfig(MotionDatasetConfig):
 
         output_map = ["agents", "agents_valid"]
         if self.roadmap:
-            output_map.append("context")
+            output_map.append("roadmap")
         if self.occupancy_size:
             output_map.extend(["time_idx", "occupancy"])
         if self.scenario_id:
