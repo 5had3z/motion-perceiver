@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import dataclass, asdict, field
 from typing import Any, Dict, List, Tuple
 from pathlib import Path
@@ -138,6 +139,8 @@ def get_sample_idxs(cfg: MotionDatasetConfig):
             assert cfg.random_heatmap_minmax is not None
             rand_kwargs["min"] = cfg.random_heatmap_minmax[0]
             rand_kwargs["max"] = cfg.random_heatmap_minmax[1]
+        if in_distributed_mode():
+            rand_kwargs["seed"] = 12345
 
         time_idx = fn.mixed_random_generator(
             always_sample=cfg.heatmap_time, **rand_kwargs
@@ -151,6 +154,9 @@ def get_sample_idxs(cfg: MotionDatasetConfig):
 
         time_idxs = []
         for kwargs in cfg.random_heatmap_piecewise:
+            kwargs = deepcopy(kwargs)
+            if in_distributed_mode():
+                kwargs["seed"] = 12345
             const_times = sorted(
                 [x for x in cfg.heatmap_time if kwargs["min"] <= x < kwargs["max"]]
             )

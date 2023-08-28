@@ -8,8 +8,8 @@ namespace randomop
 {
 using DaliTensor = dali::SampleView<dali::CPUBackend>;
 
-std::vector<int32_t> generateTimeIdxs(
-    const std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime, int64_t randCount, int64_t stride)
+std::vector<int32_t> generateTimeIdxs(const std::set<int64_t>& constTime, int64_t minTime, int64_t maxTime,
+    int64_t randCount, int64_t stride, unsigned int seed = 0)
 {
     // Create vector of candidates that aren't in the constant set according to range(min,max,stride)
     // TODO: use std::views::to() when available instead of emplace_back
@@ -20,8 +20,11 @@ std::vector<int32_t> generateTimeIdxs(
         randomIdxs.emplace_back(v);
     }
 
+    // Statically initialise generator with seed
+    static auto gen = std::mt19937(seed);
+
     // Randomly Shuffle
-    std::shuffle(randomIdxs.begin(), randomIdxs.end(), std::mt19937{std::random_device{}()});
+    std::ranges::shuffle(randomIdxs, gen);
 
     // Create new set with constant and n randomly sampled time idxs
     // We use a set so its ordered which may simplify things downstream
@@ -43,7 +46,7 @@ void MixedRandomGenerator<dali::CPUBackend>::RunImpl(dali::Workspace& ws)
 {
     auto& outputTensor = ws.Output<::dali::CPUBackend>(0);
     auto outputTensorType = outputTensor.type_info();
-    auto timeIdx = generateTimeIdxs(mConstValues, mMin, mMax, mCount, mStride);
+    auto timeIdx = generateTimeIdxs(mConstValues, mMin, mMax, mCount, mStride, mSeed);
 
     for (int sampleId = 0; sampleId < ws.GetRequestedBatchSize(0); ++sampleId)
     {
