@@ -3,6 +3,28 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from torch import Tensor, uint8
+from torchvision.transforms.functional import normalize
+
+
+def reverse_image_transforms(image: Tensor) -> Tensor:
+    """
+    Reverse image normalization, permute RGB -> BGR and rescale [0, 1] -> [0, 255].
+    This is useful for visualising an image yielded from a dataloader that has the
+    aformentioned typical data normalisation transforms.
+    Channel permutation is because OpenCV....
+    Where original normalisation had the typical parameters:
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+    """
+    image = normalize(
+        image,
+        mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
+        std=[1 / 0.229, 1 / 0.224, 1 / 0.225],
+        inplace=False,
+    )
+    image = (255 * image[:, [2, 1, 0]]).clamp(0, 255).to(uint8)
+    return image
 
 
 def apply_ts_text(ts: int, frame: np.ndarray, extra: str = "") -> np.ndarray:
@@ -133,7 +155,7 @@ def write_occupancy_video(
                 roadmap = roadmap.squeeze(0)
             # Reshape to channels last otherwise
             elif roadmap.shape[0] == 3:
-                roadmap = np.transpose(roadmap, [2, 1, 0])
+                roadmap = np.moveaxis(roadmap, [0], [-1])
             else:
                 raise NotImplementedError("Case not handled")
 

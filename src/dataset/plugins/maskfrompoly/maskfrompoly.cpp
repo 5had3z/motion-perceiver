@@ -208,6 +208,8 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
     const auto timeDim = dataTensor.shape()[1];
     const bool isBboxTensor = dataTensor.shape()[2] == 9;
 
+    DALI_ENFORCE_IN_RANGE(inTimeIdx, 0, static_cast<std::size_t>(timeDim));
+
     for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
     {
         const auto cIdx = instanceId * timeDim + inTimeIdx;

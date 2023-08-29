@@ -45,6 +45,7 @@ class WaymoDatasetConfig(MotionDatasetConfig):
         return props
 
     def __post_init__(self):
+        self.basepath = self.basepath / "waymo_motion" / "tf_example"
         if self.heatmap_time is None:
             self.heatmap_time = [10] if self.full_sequence else [0]
         if self.roadmap_size == 0:

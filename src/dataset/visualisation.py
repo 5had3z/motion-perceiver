@@ -11,6 +11,9 @@ from torchvision.utils import flow_to_image
 
 def context_image_occupancy(context: Tensor, occupancy: Tensor):
     """Render occupancy as blue on the context image"""
+    if context.shape[1] == 3:
+        context = torch.moveaxis(context, [1], [-1])
+
     # Write images
     for i, (context_, occupancy_) in enumerate(zip(context, occupancy)):
         for tidx, occ_t in enumerate(occupancy_[0]):

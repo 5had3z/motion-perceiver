@@ -27,6 +27,7 @@ class SDDDatasetConfig(MotionDatasetConfig):
     vehicle_features: List[str] = field(default_factory=lambda: _ALL_FEATURES)
 
     def __post_init__(self):
+        self.basepath /= "sdd_tfrecord"
         with open(self.basepath / "metadata.yaml", "r", encoding="utf-8") as f:
             metadata = yaml.safe_load(f)
         assert metadata["dataset"] == "sdd"

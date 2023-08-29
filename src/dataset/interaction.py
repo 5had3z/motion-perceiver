@@ -37,6 +37,10 @@ _TIMESPAN: int = 40
 @dataclass
 @DATASET_REGISTRY.register_module("interacton")
 class InteractionConfig(MotionDatasetConfig):
+    def __post_init__(self):
+        super().__post_init__()
+        self.basepath = self.basepath / "interaction" / "multi" / "tfrecord"
+
     @property
     def properties(self) -> Dict[str, Any]:
         return asdict(self)

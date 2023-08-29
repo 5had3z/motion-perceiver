@@ -33,6 +33,7 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
     def __post_init__(self):
         super().__post_init__()
         assert self.withheld in SUBSETS
+        self.basepath /= "eth_ucy_tfrecord"
 
     @property
     def properties(self) -> Dict[str, Any]:

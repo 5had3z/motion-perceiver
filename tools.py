@@ -22,7 +22,7 @@ from konductor.trainer.init import get_experiment_cfg, get_dataset_config
 from src.dataset.common import MotionDatasetConfig
 from src.model import MotionPerceiver
 from utils.eval_common import initialize, scenairo_id_tensor_2_str
-from utils.visual import write_occupancy_video, apply_ts_text
+from utils.visual import write_occupancy_video, apply_ts_text, reverse_image_transforms
 
 app = typer.Typer()
 
@@ -191,15 +191,7 @@ def generate_videos(
             # If the context is an rgb image, it is normalized so we
             # need to un-normalize for video writing and change to bgr
             if "roadmap" in data and data["roadmap"].shape[1] == 3:
-                normalize(
-                    data["roadmap"],
-                    mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
-                    std=[1 / 0.229, 1 / 0.224, 1 / 0.225],
-                    inplace=True,
-                )
-                data["roadmap"] = (
-                    (255 * data["roadmap"][:, [2, 1, 0]]).clamp(0, 255).to(torch.uint8)
-                )
+                data["roadmap"] = reverse_image_transforms(data["roadmap"])
 
             write_video_batch(
                 data,
