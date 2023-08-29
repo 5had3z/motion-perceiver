@@ -5,13 +5,17 @@ from subprocess import Popen
 
 import dash
 from konductor.webserver.app import app, get_basic_layout, add_base_args
-from utils import plotly_timeseries, plotly_media
+from utils import plotly_timeseries, plotly_media, plotly_pretrain_graph
 
 dash.register_page(
     "Timeseries", path="/timeseries-performance", layout=plotly_timeseries.layout
 )
 
 dash.register_page("Media", path="/media", layout=plotly_media.layout)
+
+dash.register_page(
+    "TrainGraph", path="/train-graph", layout=plotly_pretrain_graph.layout
+)
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -25,5 +29,5 @@ if __name__ == "__main__":
         shell=True,
     )
 
-    app.run()
+    app.run(debug=True)
     proc.terminate()
