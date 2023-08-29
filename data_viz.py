@@ -6,7 +6,6 @@ from typing import Dict
 from pathlib import Path
 import os
 
-import torch
 from torch import Tensor, inference_mode
 from konductor.data import ModuleInitConfig, Mode, get_dataloader
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
@@ -30,15 +29,15 @@ def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
         # dv.roadgraph(data["roadgraph"], data["roadgraph_valid"])
         # dv.roadmap(data["roadmap"])
         # dv.optical_flow(data["flow"])
-        if "roadmap" in data:
+        if "roadmap" in data and data["roadmap"].shape[1] == 1:
             dv.roadmap_and_occupancy(
                 data["roadmap"],
-                data["occupancy"],
+                data["heatmap"],
                 data.get("signals", None),
                 roi_scale=config.occupancy_roi,
             )
-        if "context" in data:
-            dv.context_image_occupancy(data["context"], data["occupancy"])
+        if "roadmap" in data and data["roadmap"].shape[1] == 3:
+            dv.context_image_occupancy(data["roadmap"], data["heatmap"])
         dv.scatterplot_sequence(data, 7)
         # dv.occupancy_from_current_pose(data)
 
@@ -48,7 +47,7 @@ def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
 @inference_mode()
 def main():
     batch_size = 4
-    datacfg = SDDDatasetConfig(
+    datacfg = WaymoDatasetConfig(
         train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
         val_loader=ModuleInitConfig(
             type="dali",
@@ -59,19 +58,19 @@ def main():
         ),
         # withheld="eth",
         full_sequence=True,
-        map_normalize=30.0,
+        map_normalize=40.0,
         occupancy_size=256,
         filter_future=True,
         roadmap_size=256,
         roadmap=True,
-        # use_sdc_frame=True,
-        # waymo_eval_frame=True,
-        heatmap_time=list(range(0, 20)),
+        use_sdc_frame=True,
+        waymo_eval_frame=True,
+        heatmap_time=list(range(0, 91, 10)),
         # random_heatmap_count=0,
         # random_heatmap_minmax=(0, 60),
-        # signal_features=False,
-        # occupancy_roi=0.5,
-        # only_vehicles=True,
+        signal_features=True,
+        occupancy_roi=0.5,
+        only_vehicles=True,
         # flow_mask=True,
         # velocity_norm=4.0,
         time_stride=1,

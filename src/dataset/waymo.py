@@ -220,7 +220,7 @@ def waymo_motion_pipe(
                 fn.masked_median(data_xy[:, :, 1], data_valid),
             )
         )
-        angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
+        angle_rad = Constant(0.0, device="cpu", dtype=DALIDataType.FLOAT)
 
     if any(a.type == "random_rotate" for a in augmentations):
         angle_rad += fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
