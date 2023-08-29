@@ -11,6 +11,7 @@ from konductor.init import ExperimentInitConfig
 from src.dataset.common import MotionDatasetConfig
 from src.dataset.waymo import WaymoDatasetConfig
 from src.dataset.interaction import InteractionConfig
+from src.dataset.sdd import SDDDatasetConfig
 from src.model.motion_perceiver import MotionPerceiver
 
 
@@ -91,9 +92,9 @@ def initialize(
     data_cfg.filter_future = True
     data_cfg.random_heatmap_count = 0
     data_cfg.random_heatmap_piecewise.clear()  # Ensure piecewise random is cleared
+    data_cfg.scenario_id = True
 
     if isinstance(data_cfg, WaymoDatasetConfig):
-        data_cfg.scenario_id = True
         data_cfg.use_sdc_frame = True
         data_cfg.waymo_eval_frame = True
         data_cfg.only_vehicles = True
@@ -107,5 +108,7 @@ def initialize(
         )
     elif isinstance(data_cfg, InteractionConfig):
         data_cfg.heatmap_time = list(range(40 // data_cfg.time_stride))
+    elif isinstance(data_cfg, SDDDatasetConfig):
+        data_cfg.heatmap_time = list(range(77 // data_cfg.time_stride))
 
     return model.eval(), get_dataloader(data_cfg, split)

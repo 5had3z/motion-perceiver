@@ -74,6 +74,17 @@ def apply_roadmap_to_frame(
     frame[mask] = np.array((0, 0, 0), dtype=np.uint8)
 
 
+def apply_image_to_frame(
+    frame: np.ndarray, image: np.ndarray, threshold: float | None = None
+):
+    """Apply rgb context image to occupancy frame"""
+    mask = np.ones(image.shape[:-1], dtype=bool)
+    road_thresh = 255 * threshold if threshold is not None else 255 / 2
+    for ch in range(3):
+        mask &= frame[..., ch] > road_thresh  # mostly white
+    frame[mask] = image[mask]
+
+
 def signal_color(cls: float):
     match int(cls):
         case 1 | 4:  # arrow stop | stop
@@ -116,12 +127,23 @@ def write_occupancy_video(
         raise RuntimeError(f"Can't write video, writer not open: {path}")
 
     if roadmap is not None:
-        if len(roadmap.shape) == 3:
-            roadmap = roadmap.squeeze(0)
+        if roadmap.ndim == 3:
+            # Squeeze channel if its roadgraph raster
+            if roadmap.shape[0] == 1:
+                roadmap = roadmap.squeeze(0)
+            # Reshape to channels last otherwise
+            elif roadmap.shape[0] == 3:
+                roadmap = np.transpose(roadmap, [2, 1, 0])
+            else:
+                raise NotImplementedError("Case not handled")
+
+        # Center-Crop the roadmap to the ROI if necessary
         if roadmap_scale < 1.0:
             start = int((1 - roadmap_scale) * roadmap.shape[0] / 2)
             end = start + int(roadmap_scale * roadmap.shape[0])
             roadmap = roadmap[start:end, start:end]
+
+        # Resize the roadmap to the output shape
         roadmap = cv2.resize(roadmap, video_shape, interpolation=cv2.INTER_NEAREST)
 
     # Check if prediction is 2phase, if so squeeze ground truth
@@ -132,10 +154,15 @@ def write_occupancy_video(
     for idx, (pred_frame, data_frame) in enumerate(zip(pred, data)):
         bgr_frame = create_occupancy_frame(data_frame, pred_frame, video_shape, thresh)
         if roadmap is not None:
-            apply_roadmap_to_frame(bgr_frame, roadmap, thresh)
+            if roadmap.ndim == 2:
+                apply_roadmap_to_frame(bgr_frame, roadmap, thresh)
+            else:
+                apply_image_to_frame(bgr_frame, roadmap, thresh)
+
         if signals is not None:
             masked_signals = signals[0][idx][signals[1][idx]]
             bgr_frame = apply_signals_to_frame(bgr_frame, masked_signals, roadmap_scale)
+
         bgr_frame = apply_ts_text(
             idx * time_stride, bgr_frame, extra=f"pr>{thresh}" if thresh else ""
         )

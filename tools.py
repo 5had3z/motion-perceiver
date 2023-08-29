@@ -13,6 +13,7 @@ import numpy as np
 import typer
 import torch
 from torch import Tensor
+from torchvision.transforms.functional import normalize
 from torchvision.utils import flow_to_image
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from konductor.utilities.pbar import LivePbar
@@ -186,6 +187,19 @@ def generate_videos(
             outputs = model(**data)
             for key in outputs:
                 outputs[key][outputs[key] < 0] *= 8.0
+
+            # If the context is an rgb image, it is normalized so we
+            # need to un-normalize for video writing and change to bgr
+            if "roadmap" in data and data["roadmap"].shape[1] == 3:
+                normalize(
+                    data["roadmap"],
+                    mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
+                    std=[1 / 0.229, 1 / 0.224, 1 / 0.225],
+                    inplace=True,
+                )
+                data["roadmap"] = (
+                    (255 * data["roadmap"][:, [2, 1, 0]]).clamp(0, 255).to(torch.uint8)
+                )
 
             write_video_batch(
                 data,
