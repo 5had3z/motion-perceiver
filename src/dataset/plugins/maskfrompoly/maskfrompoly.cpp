@@ -208,7 +208,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
     const auto timeDim = dataTensor.shape()[1];
     const bool isBboxTensor = dataTensor.shape()[2] == 9;
 
-    DALI_ENFORCE_IN_RANGE(inTimeIdx, 0, static_cast<std::size_t>(timeDim));
+    DALI_ENFORCE_VALID_INDEX(inTimeIdx, static_cast<std::size_t>(timeDim));
 
     for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
     {
@@ -295,6 +295,8 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
 
     const auto instanceDim = dataTensor.shape()[0];
     const auto timeDim = dataTensor.shape()[1];
+
+    DALI_ENFORCE_VALID_INDEX(inTimeIdx, static_cast<std::size_t>(timeDim));
 
     for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
     {
