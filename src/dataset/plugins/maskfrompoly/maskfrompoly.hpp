@@ -51,7 +51,7 @@ protected:
     {
         DALI_ENFORCE(mROIScale > 0.0 && mROIScale <= 1.0, "invalid roi, 0 < roi <= 1");
 
-        const auto nTimestamp = ws.GetInputShape(2)[0][0];
+        const int64_t nTimestamp = ws.GetInputShape(2)[0][0];
         // Class, Timestep, Height, Width
         dali::TensorShape<4> maskShape(mSeparateClasses ? 3 : 1, nTimestamp, mMaskSize, mMaskSize);
 

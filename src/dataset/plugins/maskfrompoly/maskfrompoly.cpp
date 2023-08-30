@@ -14,26 +14,6 @@ using ConstDaliTensor = ::dali::ConstSampleView<::dali::CPUBackend>;
 using DaliTensor = ::dali::SampleView<::dali::CPUBackend>;
 
 /**
- * @brief sizeof(DALIDataType)
- *
- * @param d DALIDataType to query sizeof in bytes
- * @return std::size_t
- */
-std::size_t daliType2size(dali::DALIDataType d)
-{
-    switch (d)
-    {
-    case dali::DALIDataType::DALI_INT16: return sizeof(int16_t);
-    case dali::DALIDataType::DALI_INT32: return sizeof(int32_t);
-    case dali::DALIDataType::DALI_INT64: return sizeof(int64_t);
-    case dali::DALIDataType::DALI_FLOAT16: return sizeof(half);
-    case dali::DALIDataType::DALI_FLOAT: return sizeof(float);
-    case dali::DALIDataType::DALI_FLOAT64: return sizeof(double);
-    default: throw std::runtime_error("Unidentified DALI type" + std::to_string(d));
-    }
-}
-
-/**
  * @brief converts pose in pixel space to a polygon (ul, ur, bl, br)
  *
  * @param x
@@ -192,7 +172,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
     DaliTensor outputTensor, std::size_t outTimeIdx, float roiScale, float circleRad, bool separateClasses) noexcept
 {
     const auto outputDims = outputTensor.shape();
-    const auto outputStride = outputDims[2] * outputDims[3] * daliType2size(outputTensor.type());
+    const auto outputStride = outputDims[2] * outputDims[3];
     const auto timeStride = outputStride * outputDims[1];
 
     // Create vector of cv::Mat views of class image tensors
@@ -200,7 +180,7 @@ void createHeatmapImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, 
     for (auto idx = 0; idx < outputDims[0]; ++idx)
     {
         heatmapImages.emplace_back(outputDims[2], outputDims[3], CV_32F,
-            outputTensor.raw_mutable_data() + idx * timeStride + outputStride * outTimeIdx);
+            outputTensor.mutable_data<float>() + idx * timeStride + outputStride * outTimeIdx);
         heatmapImages.back().setTo(0);
     }
 
@@ -280,7 +260,7 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
     DaliTensor outputTensor, std::size_t outTimeIdx, float roiScale, bool separateClasses) noexcept
 {
     const auto outputDims = outputTensor.shape();
-    const auto outputStride = outputDims[2] * outputDims[3] * daliType2size(outputTensor.type());
+    const auto outputStride = outputDims[2] * outputDims[3];
     const auto timeStride = outputStride * outputDims[1];
 
     // Create vector of cv::Mat views of class image tensors
@@ -289,7 +269,7 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
     for (auto idx = 0; idx < outputDims[0]; ++idx)
     {
         flowImages.emplace_back(outputDims[2], outputDims[3], CV_32F,
-            outputTensor.raw_mutable_data() + idx * timeStride + outputStride * outTimeIdx);
+            outputTensor.mutable_data<float>() + idx * timeStride + outputStride * outTimeIdx);
         flowImages.back().setTo(0);
     }
 
