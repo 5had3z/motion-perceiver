@@ -1,35 +1,35 @@
-from typing import Any, Dict, List, Tuple, Set
-from pathlib import Path
 import random
-from functools import reduce
 from copy import deepcopy
+from functools import reduce
+from pathlib import Path
+from typing import Any, Dict, List, Set, Tuple
 
 import einops
 import torch
-from torch import nn, Tensor
-from torch.distributed import scatter_object_list
 from konductor.utilities.comm import (
-    is_main_process,
-    in_distributed_mode,
     get_world_size,
+    in_distributed_mode,
+    is_main_process,
 )
+from torch import Tensor, nn
+from torch.distributed import scatter_object_list
 
 try:
     from torchdiffeq import odeint
 except ModuleNotFoundError:
     pass  # Only needed for ode model
 
-from ._iadapter import InputAdapter, TrafficIA, ImageIA, SignalIA, RasterEncoder
+from . import perceiver_io as pio
+from ._iadapter import ImageIA, InputAdapter, RasterEncoder, SignalIA, TrafficIA
 from ._oadapter import (
-    HeatmapOA,
     ClassHeatmapOA,
     ClassificationOA,
+    HeatmapOA,
     OccupancyFlowOA,
-    OccupancyRefinePre,
-    OccupancyRefinePost,
     OccupancyFlowRefinePre,
+    OccupancyRefinePost,
+    OccupancyRefinePre,
 )
-from . import perceiver_io as pio
 
 
 class MotionEncoder(nn.Module):
@@ -666,6 +666,9 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
         num_cross_attention_heads: int = 4,
         dropout: float = 0,
         num_self_attention_heads: int = 4,
+        stride_first: int = 1,
+        transition_idx: int = 10,
+        stride_second: int = 10,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -677,6 +680,9 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
             num_self_attention_heads=num_self_attention_heads,
             **kwargs,
         )
+        self.stride_first = stride_first
+        self.stride_second = stride_second
+        self.transition_idx = transition_idx
         self.forecast_layer = pio.self_attention_block(
             num_layers=num_self_attention_layers_per_block,
             num_channels=num_latent_channels,
@@ -719,7 +725,7 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
 
         proc_args = (agents, agents_mask, signals, signals_mask, enc_road, road_mask)
 
-        for t_idx in range(min_idx + 1, 11):
+        for t_idx in range(min_idx + 1, self.transition_idx + 1, self.stride_first):
             x_latent = self.process_timestep(
                 t_idx, input_indicies, x_latent, *proc_args
             )
@@ -729,7 +735,8 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
                     x_latent = x_latent.detach().clone()
 
         max_idx = int(output_idx.max().item()) + 1
-        for t_idx in range(20, max_idx, 10):
+        phase_two_start = self.transition_idx + self.stride_second
+        for t_idx in range(phase_two_start, max_idx, self.stride_second):
             x_latent = self.forecast_layer(x_latent)
             if self.road_attn is not None:
                 x_latent = self.road_attn(x_latent, enc_road, road_mask)
