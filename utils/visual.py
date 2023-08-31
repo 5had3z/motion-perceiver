@@ -1,10 +1,12 @@
-from typing import Tuple
 from pathlib import Path
+from typing import List, Tuple
 
 import cv2
 import numpy as np
+import torch
 from torch import Tensor, uint8
 from torchvision.transforms.functional import normalize
+from torchvision.utils import flow_to_image
 
 
 def reverse_image_transforms(image: Tensor) -> Tensor:
@@ -27,19 +29,18 @@ def reverse_image_transforms(image: Tensor) -> Tensor:
     return image
 
 
-def apply_ts_text(ts: int, frame: np.ndarray, extra: str = "") -> np.ndarray:
+def apply_ts_text(ts: float, frame: np.ndarray, extra: str = "") -> np.ndarray:
     """Apply timestamp text to image frame and optional "extra" text underneath"""
     text_args = [cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2, cv2.LINE_AA]
 
-    if ts < 10:
+    if ts < 0:
         text = "past"
-    elif ts == 10:
+    elif ts == 0:
         text = "present"
     else:
         text = "future"
-    text += f": {ts-10:+}"
 
-    frame = cv2.putText(frame, text, (25, 50), *text_args)
+    frame = cv2.putText(frame, f"{text}: {ts:+}", (25, 50), *text_args)
 
     if extra:
         frame = cv2.putText(frame, extra, (25, 75), *text_args)
@@ -131,18 +132,18 @@ def apply_signals_to_frame(frame: np.ndarray, signals: np.ndarray, scale: float)
 def write_occupancy_video(
     data: np.ndarray,
     pred: np.ndarray,
+    timestamps: List[float],
     path: Path,
     thresh: float | None = None,
     roadmap: np.ndarray | None = None,
     signals: Tuple[np.ndarray, np.ndarray] | None = None,
     roadmap_scale: float = 1.0,
-    time_stride: int = 1,
 ) -> None:
     """Write video of prediction over time"""
 
     video_shape = (800, 800)
     v_writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10 // time_stride, video_shape
+        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10, video_shape
     )
 
     if not v_writer.isOpened():
@@ -168,11 +169,6 @@ def write_occupancy_video(
         # Resize the roadmap to the output shape
         roadmap = cv2.resize(roadmap, video_shape, interpolation=cv2.INTER_NEAREST)
 
-    # Check if prediction is 2phase, if so squeeze ground truth
-    if pred.shape[0] == 19:
-        data[11:19] = data[20::10]
-        data = data[:19]
-
     for idx, (pred_frame, data_frame) in enumerate(zip(pred, data)):
         bgr_frame = create_occupancy_frame(data_frame, pred_frame, video_shape, thresh)
         if roadmap is not None:
@@ -186,8 +182,64 @@ def write_occupancy_video(
             bgr_frame = apply_signals_to_frame(bgr_frame, masked_signals, roadmap_scale)
 
         bgr_frame = apply_ts_text(
-            idx * time_stride, bgr_frame, extra=f"pr>{thresh}" if thresh else ""
+            timestamps[idx],
+            bgr_frame,
+            extra=f"pr>{thresh}" if thresh else "",
         )
         v_writer.write(bgr_frame)
+
+    v_writer.release()
+
+
+def create_flow_frame(
+    pred_flow: np.ndarray,
+    pred_occ: np.ndarray,
+    truth_flow: np.ndarray,
+    frame_size: Tuple[int, int],
+    mask_thresh: float = 0.5,
+) -> np.ndarray:
+    """Create a side-by-side frame of predicted occupancy flow and ground truth,
+    mask out predicted flow with predicted occupancy over a threshold
+    A threshold of zero is obviously no threshold (show all flow for every pixel)
+    """
+    pred_flow_rgb = flow_to_image(torch.tensor(pred_flow)).numpy()
+    pred_flow_rgb[:, pred_occ < mask_thresh] = 255  # set to white
+    truth_flow_rgb = flow_to_image(torch.tensor(truth_flow)).numpy()
+    rgb_frame = cv2.hconcat(
+        [np.moveaxis(pred_flow_rgb, 0, 2), np.moveaxis(truth_flow_rgb, 0, 2)]
+    )
+    rgb_frame = cv2.resize(rgb_frame, frame_size, interpolation=cv2.INTER_LINEAR)
+    return rgb_frame
+
+
+def write_flow_video(
+    pred_flow_sequence: np.ndarray,
+    pred_occ_sequence: np.ndarray,
+    truth_flow_sequence: np.ndarray,
+    timestamps: List[float],
+    path: Path,
+    mask_thresh: float = 0.5,
+):
+    """"""
+    video_shape = (1600, 800)
+    v_writer = cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10, video_shape
+    )
+
+    if not v_writer.isOpened():
+        raise RuntimeError(f"Can't write video, writer not open: {path}")
+
+    for idx in range(pred_flow_sequence.shape[1]):
+        rgb_frame = create_flow_frame(
+            pred_flow_sequence[:, idx],
+            pred_occ_sequence[idx],
+            truth_flow_sequence[:, idx],
+            video_shape,
+            mask_thresh,
+        )
+
+        rgb_frame = apply_ts_text(timestamps[idx], rgb_frame, extra=f"pr>{mask_thresh}")
+
+        v_writer.write(rgb_frame)
 
     v_writer.release()

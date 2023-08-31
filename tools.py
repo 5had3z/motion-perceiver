@@ -2,27 +2,30 @@
 
 """Overrides model and dataloader params to generate the full video"""
 import argparse
+import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
-from typing_extensions import Annotated
-from typing import Dict, Tuple, Optional
-import multiprocessing as mp
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import typer
 import torch
-from torch import Tensor
-from torchvision.transforms.functional import normalize
-from torchvision.utils import flow_to_image
-from nvidia.dali.plugin.pytorch import DALIGenericIterator
+import typer
+from konductor.trainer.init import get_dataset_config, get_experiment_cfg
 from konductor.utilities.pbar import LivePbar
-from konductor.trainer.init import get_experiment_cfg, get_dataset_config
+from nvidia.dali.plugin.pytorch import DALIGenericIterator
+from torch import Tensor
+from typing_extensions import Annotated
 
 from src.dataset.common import MotionDatasetConfig
 from src.model import MotionPerceiver
+from src.model.motion_perceiver import MotionEncoder2Phase
 from utils.eval_common import initialize, scenairo_id_tensor_2_str
-from utils.visual import write_occupancy_video, apply_ts_text, reverse_image_transforms
+from utils.visual import (
+    reverse_image_transforms,
+    write_flow_video,
+    write_occupancy_video,
+)
 
 app = typer.Typer()
 
@@ -34,74 +37,18 @@ class EvalConfig:
     n_videos: int = 128
     video_thresh: float | None = None
     roi_scale: float = 1.0
+    current_time_idx: int = 10
+    sequence_length: int = 1
     time_stride: int = 1
-
-
-def create_flow_frame(
-    pred_flow: np.ndarray,
-    pred_occ: np.ndarray,
-    truth_flow: np.ndarray,
-    frame_size: Tuple[int, int],
-    mask_thresh=0.5,
-) -> np.ndarray:
-    """Create a side-by-side frame of predicted occupancy flow and ground truth,
-    mask out predicted flow with predicted occupancy over a threshold
-    A threshold of zero is obviously no threshold (show all flow for every pixel)
-    """
-    pred_flow_rgb = flow_to_image(torch.tensor(pred_flow)).numpy()
-    pred_flow_rgb[:, pred_occ < mask_thresh] = 255  # set to white
-    truth_flow_rgb = flow_to_image(torch.tensor(truth_flow)).numpy()
-    rgb_frame = cv2.hconcat(
-        [np.moveaxis(pred_flow_rgb, 0, 2), np.moveaxis(truth_flow_rgb, 0, 2)]
-    )
-    rgb_frame = cv2.resize(rgb_frame, frame_size, interpolation=cv2.INTER_LINEAR)
-    return rgb_frame
-
-
-def write_flow_video(
-    pred_flow_sequence: np.ndarray,
-    pred_occ_sequence: np.ndarray,
-    truth_flow_sequence: np.ndarray,
-    path: Path,
-    mask_thresh=0.5,
-):
-    """"""
-    video_shape = (1600, 800)
-    v_writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"VP90"), 10, video_shape
-    )
-
-    if not v_writer.isOpened():
-        raise RuntimeError(f"Can't write video, writer not open: {path}")
-
-    # Check if prediction is 2phase, if so squeeze ground truth
-    if pred_flow_sequence.shape[1] == 19:
-        truth_flow_sequence[:, 11:19] = truth_flow_sequence[:, 20::10]
-        truth_flow_sequence = truth_flow_sequence[:, :19]
-
-    for idx in range(pred_flow_sequence.shape[1]):
-        rgb_frame = create_flow_frame(
-            pred_flow_sequence[:, idx],
-            pred_occ_sequence[idx],
-            truth_flow_sequence[:, idx],
-            video_shape,
-            mask_thresh,
-        )
-
-        rgb_frame = apply_ts_text(idx, rgb_frame, extra=f"pr>{mask_thresh}")
-
-        v_writer.write(rgb_frame)
-
-    v_writer.release()
 
 
 def write_video_batch(
     data: Dict[str, Tensor],
     pred: Dict[str, Tensor],
+    timestamps: List[float],
     path: Path,
     threshold: float | None = None,
     roadmap_scale: float = 1.0,
-    time_stride: int = 1,
 ) -> None:
     """Write batch of videos"""
     mpool = mp.Pool(processes=mp.cpu_count() // 2)
@@ -137,7 +84,7 @@ def write_video_batch(
                     path=occ_path / f"{scenario_names[b_idx]}_{cls_name}.webm",
                     roadmap_scale=roadmap_scale,
                     thresh=threshold,
-                    time_stride=time_stride,
+                    timestamps=timestamps,
                 ),
             )
 
@@ -157,6 +104,7 @@ def write_video_batch(
                 truth_flow_sequence=t_flow.cpu().numpy(),
                 path=flow_path / f"{scenario_names[b_idx]}.webm",
                 mask_thresh=0.5,
+                timestamps=timestamps
                 # ),
             )
 
@@ -169,6 +117,22 @@ def write_values(data: np.ndarray, path: Path) -> None:
     with open(path, "w", encoding="utf-8") as f:
         for elem in data:
             f.write(f"{elem}\n")
+
+
+def reduce_gt_frames(
+    frames: Tensor, phase_1_stride: int, transition: int, phase_2_stride: int
+) -> Tensor:
+    """Reduces the ground truth frames to match the predicted frames.
+
+    :param frames: Ground truth occupancy frames of [b,c,t,h,w]
+    :param phase_1_stride: Stride of the first phase
+    :param transition: Index of transtion between phases
+    :param phase_2_stride: Stride of the second phase
+    """
+
+    phase1 = frames[:, :, :transition:phase_1_stride]
+    phase2 = frames[:, :, transition::phase_2_stride]
+    return torch.cat([phase1, phase2], dim=2)
 
 
 def generate_videos(
@@ -188,6 +152,37 @@ def generate_videos(
             for key in outputs:
                 outputs[key][outputs[key] < 0] *= 8.0
 
+            # Reformat the ground truth images
+            if isinstance(model.encoder, MotionEncoder2Phase):
+                reduce_keys = ["heatmap"]
+                if "flow" in data:
+                    reduce_keys.append("flow")
+
+                for key in reduce_keys:
+                    data[key] = reduce_gt_frames(
+                        data[key],
+                        model.encoder.stride_first,
+                        model.encoder.transition_idx,
+                        model.encoder.stride_second,
+                    )
+                    if key == "heatmap":
+                        assert data[key].shape[2] == outputs[key].shape[1]
+                    else:
+                        assert data[key].shape[1] == outputs[key].shape[1]
+
+                timestamps = list(
+                    range(0, model.encoder.transition_idx, model.encoder.stride_first)
+                )
+                timestamps += list(
+                    range(
+                        model.encoder.transition_idx,
+                        config.sequence_length,
+                        model.encoder.stride_second,
+                    )
+                )
+            else:
+                timestamps = list(range(0, config.sequence_length, config.time_stride))
+
             # If the context is an rgb image, it is normalized so we
             # need to un-normalize for video writing and change to bgr
             if "roadmap" in data and data["roadmap"].shape[1] == 3:
@@ -196,10 +191,10 @@ def generate_videos(
             write_video_batch(
                 data,
                 outputs,
+                [(t - config.current_time_idx) / 10 for t in timestamps],
                 config.path,
                 config.video_thresh,
                 config.roi_scale,
-                config.time_stride,
             )
 
             pbar.update(1)
@@ -291,8 +286,10 @@ def make_video(
         batch_size,
         n_samples,
         threshold,
-        data_cfg.occupancy_roi,
-        data_cfg.time_stride,
+        roi_scale=data_cfg.occupancy_roi,
+        sequence_length=data_cfg.sequence_length,
+        time_stride=data_cfg.time_stride,
+        current_time_idx=data_cfg.current_time_idx,
     )
 
     with torch.inference_mode():
