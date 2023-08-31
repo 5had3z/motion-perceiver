@@ -1,18 +1,17 @@
 """Loss function and utilities for occupancy prediction for heatmap
 """
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, Tuple
-from dataclasses import dataclass, asdict
 
 import torch
-from torch import nn, Tensor
+from konductor.losses import REGISTRY, ExperimentInitConfig, LossConfig
+from torch import Tensor, nn
 from torch.nn.functional import (
     binary_cross_entropy_with_logits,
-    mse_loss,
-    l1_loss,
     huber_loss,
+    l1_loss,
+    mse_loss,
 )
-
-from konductor.losses import REGISTRY, LossConfig, ExperimentInitConfig
 
 
 class OccupancyBCE(nn.Module):
@@ -79,7 +78,7 @@ class OccupancyFocal(nn.Module):
         self, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
     ) -> Dict[str, Tensor]:
         """"""
-        loss = torch.zeros(1).cuda().squeeze()
+        loss = torch.zeros(1, device=targets["heatmap"].device).squeeze()
         for idx_, name in enumerate(p for p in predictions if "heatmap" in p):
             loss += self._forward_aux(predictions[name], targets["heatmap"][:, idx_])
 
