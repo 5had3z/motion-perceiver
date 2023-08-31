@@ -725,7 +725,8 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
 
         proc_args = (agents, agents_mask, signals, signals_mask, enc_road, road_mask)
 
-        for t_idx in range(min_idx + 1, self.transition_idx + 1, self.stride_first):
+        phase_one_start = min_idx + self.stride_first
+        for t_idx in range(phase_one_start, self.transition_idx + 1, self.stride_first):
             x_latent = self.process_timestep(
                 t_idx, input_indicies, x_latent, *proc_args
             )
