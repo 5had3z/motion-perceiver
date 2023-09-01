@@ -34,6 +34,8 @@ def get_id_path(split: str):
     ext_split = {"test": "testing", "val": "validation"}[split]
     return (
         Path(os.environ.get("DATAPATH", "/data"))
+        / "waymo-motion"
+        / "tf_example"
         / f"challenge_{ext_split}_scenario_ids.txt"
     )
 
@@ -44,7 +46,7 @@ def generate(
     run_hash: str,
     split: Annotated[Mode, typer.Option()],
     workers: Annotated[int, typer.Option()] = 4,
-    batch_size: Annotated[int, typer.Option()] = 8,
+    batch_size: Annotated[int, typer.Option()] = 16,
 ):
     """
     Export pytorch predictions to folder of numpy files
