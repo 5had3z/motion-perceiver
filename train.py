@@ -108,5 +108,6 @@ if __name__ == "__main__":
     logging.basicConfig(
         format=f"%(asctime)s-RANK:{comm.get_local_rank()}-%(levelname)s-%(name)s: %(message)s",
         level=logging.INFO,
+        force=True,
     )
     main()
