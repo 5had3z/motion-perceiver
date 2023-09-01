@@ -1,16 +1,18 @@
+# Copy Konductor from dev build
+FROM mu00120825.eng.monash.edu.au:5000/konductor:pytorch-main as konductor-dev
+
 # Compile OpenCV with imgproc for DALI Plugin
 FROM ubuntu:22.04 AS opencv-build
 WORKDIR /opt/opencv
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip ninja-build
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.7.0.zip && \
-    unzip opencv.zip   
+    unzip opencv.zip
 RUN cmake -B build -S opencv-4.7.0 -G Ninja -DBUILD_LIST=imgproc && \
     cmake --build build --parallel
 
-FROM mu00120825.eng.monash.edu.au:5000/konductor:pytorch-main
+FROM nvcr.io/nvidia/pytorch:23.08-py3
 
-USER root
 # Install OpenCV from compile container
 COPY --from=opencv-build /opt/opencv /opt/opencv
 
@@ -26,12 +28,25 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
 
 RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
 
+# Add code cli for remote tunnel
+RUN curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' --output vscode_cli.tar.gz && \
+    tar -xf vscode_cli.tar.gz -C /usr/local/bin && \
+    rm vscode_cli.tar.gz
+
+COPY --from=konductor-dev /opt/konductor /opt/konductor
+RUN cd /opt/konductor && pip3 install dist/$(ls dist/ | grep whl)
+
 # Install in dist-utils so not overwritten in /home/worker
 RUN pip3 install \
     opencv-python-headless==4.7.0.68 \
     einops==0.6.0 \
     scipy==1.10.0 \ 
+    paramiko==3.0.0 \
     git+https://github.com/rtqichen/torchdiffeq.git@7265eb764e97cc485ec2d8fcbd87b4b95ca416e8
+
+RUN useradd -rm -d /home/worker -s /bin/bash -G sudo -U -u 1000 worker
+USER worker
+WORKDIR /home/worker
 
 # COMMIT arg is Required for training tracking purposes
 # Use --build-arg COMMIT="$(git rev-parse --short HEAD)"
@@ -39,11 +54,12 @@ ARG COMMIT
 RUN [ ! -z "${COMMIT}" ]
 ENV COMMIT_SHA=${COMMIT}
 
-USER worker
-WORKDIR /home/worker
-
 COPY --chown=worker:worker . .
 RUN cd src/dataset/plugins && \
     CC=/usr/bin/gcc-13 CXX=/usr/bin/g++-13 \
     cmake -B build -G Ninja && \
     cmake --build build --parallel --config Release
+
+# Start as remote tunnel with default server name
+ENTRYPOINT ["code", "tunnel", "--accept-server-license-terms", "--name"]
+CMD ["motion-perceiver"]
