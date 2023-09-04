@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 from copy import deepcopy
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Callable, Dict, List
 import os
 import zlib
 from math import ceil
@@ -11,6 +11,10 @@ import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from google.protobuf import text_format
+from waymo_open_dataset.utils.occupancy_flow_grids import (
+    WaypointGrids,
+    _WaypointGridsOneType,
+)
 from waymo_open_dataset.protos import occupancy_flow_submission_pb2
 from waymo_open_dataset.utils import (
     occupancy_flow_data,
@@ -109,10 +113,10 @@ def _add_waypoints_to_scenario_prediction(
 
 
 def _apply_sigmoid_to_occupancy_logits(
-    pred_waypoint_logits: occupancy_flow_grids.WaypointGrids,
-) -> occupancy_flow_grids.WaypointGrids:
+    pred_waypoint_logits: WaypointGrids,
+) -> WaypointGrids:
     """Converts occupancy logits to probabilities."""
-    pred_waypoints = occupancy_flow_grids.WaypointGrids()
+    pred_waypoints = WaypointGrids()
     pred_waypoints.vehicles.observed_occupancy = [
         tf.sigmoid(x) for x in pred_waypoint_logits.vehicles.observed_occupancy
     ]
@@ -133,9 +137,9 @@ def _load_prediction(numpy_file: Path) -> np.ndarray:
     return np_pred
 
 
-def _read_prediction_file(numpy_file: Path) -> occupancy_flow_grids.WaypointGrids:
+def _read_prediction_file(numpy_file: Path) -> WaypointGrids:
     """Read numpy file with logits and apply any extra transforms"""
-    np_pred = _load_prediction(numpy_file)
+    np_pred = _load_prediction(numpy_file)[None]  # Unsqueeze batch dim
     prediction = tf.convert_to_tensor(np_pred)
     pred_waypoint_logits = _get_pred_waypoint_logits(prediction)
     return pred_waypoint_logits
@@ -185,8 +189,8 @@ def write_images(
     pred_waypoints: List[tf.Tensor],
     scenario_id: str,
     metrics: OccupancyFlowMetrics,
-    opt_pred_waypoints: Optional[List[tf.Tensor]] = None,
-    opt_metrics: Optional[OccupancyFlowMetrics] = None,
+    opt_pred_waypoints: List[tf.Tensor] | None = None,
+    opt_metrics: OccupancyFlowMetrics | None = None,
 ) -> None:
     # Write image of prediction vs loaded ground truth
     subplot_base = 121 if opt_pred_waypoints is None else 131
@@ -216,70 +220,143 @@ def write_images(
         plt.close()
 
 
+def _sample_waypoint_one_type(src: _WaypointGridsOneType, idx: int):
+    dest = _WaypointGridsOneType()
+    dest.observed_occupancy = [src.observed_occupancy[idx]]
+    dest.occluded_occupancy = [src.occluded_occupancy[idx]]
+    dest.flow = [src.flow[idx]]
+    if len(src.flow_origin_occupancy) > 0:
+        dest.flow_origin_occupancy = [src.flow_origin_occupancy[idx]]
+    return dest
+
+
+def sample_waypoint(waypoints: WaypointGrids, idx: int) -> WaypointGrids:
+    """Make WaypointGrids with single waypoint at idx"""
+    waypoint = WaypointGrids()
+    waypoint.vehicles = _sample_waypoint_one_type(waypoints.vehicles, idx)
+
+    # Only copy cyclists and pedestrians if they exist
+    if len(waypoints.cyclists.observed_occupancy) > 0:
+        waypoint.cyclists = _sample_waypoint_one_type(waypoints.cyclists, idx)
+    if len(waypoints.pedestrians.observed_occupancy) > 0:
+        waypoint.pedestrians = _sample_waypoint_one_type(waypoints.pedestrians, idx)
+
+    return waypoint
+
+
+def _evaluate_timepoints_and_mean(
+    dataset: tf.data.Dataset,
+    config: OccupancyFlowTaskConfig,
+    inference_blob_folder: Path,
+    split: str,
+    pbar: tqdm | None = None,
+) -> List[MetricData]:
+    """Evaluate model and performance at waypoints as well as the average"""
+    perf: List[MetricData] = [MetricData("waypoint_mean")]
+    for waypoint in range(config.num_waypoints):
+        perf.append(MetricData(f"waypoint_{waypoint + 1}"))
+
+    cfg_keyframe = deepcopy(config)
+    cfg_keyframe.num_waypoints = 1
+
+    for inputs in dataset:
+        inputs = occupancy_flow_data.add_sdc_fields(inputs)
+        timestep_grids = occupancy_flow_grids.create_ground_truth_timestep_grids(
+            inputs, config
+        )
+        true_waypoints = occupancy_flow_grids.create_ground_truth_waypoint_grids(
+            timestep_grids, config
+        )
+
+        pred_waypoint_logits = _get_pred_waypoint_logits(inputs["prediction"])
+        pred_waypoints = _apply_sigmoid_to_occupancy_logits(pred_waypoint_logits)
+
+        metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
+            config, true_waypoints, pred_waypoints
+        )
+
+        perf[0].add_auc(metrics.vehicles_observed_auc)
+        perf[0].add_iou(metrics.vehicles_observed_iou)
+
+        for waypoint in range(config.num_waypoints):
+            true_waypoint = sample_waypoint(true_waypoints, waypoint)
+            pred_waypoint = sample_waypoint(pred_waypoints, waypoint)
+            metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
+                cfg_keyframe, true_waypoint, pred_waypoint
+            )
+            perf[waypoint + 1].add_auc(metrics.vehicles_observed_auc)
+            perf[waypoint + 1].add_iou(metrics.vehicles_observed_iou)
+
+        if pbar is not None:
+            pbar.update(1)
+            if pbar.n % 10 == 0:
+                pbar.set_description(str(perf[0]))
+
+    return perf
+
+
 def _get_validation_and_prediction(
     dataset: tf.data.Dataset,
-    scenario_ids: Set[str],
-    inference_blob_folder: Path,
     config: OccupancyFlowTaskConfig,
+    inference_blob_folder: Path,
     split: str,
     visualize: bool = False,
-    batch_size: int = 1,
-) -> Tuple[MetricData, MetricData]:
+    pbar: tqdm | None = None,
+) -> List[MetricData]:
     """Iterate over all test examples in one shard and generate predictions."""
     pt_stats = MetricData("pytorch")
     tf_stats = MetricData("tensorflow")
     flow: List[float] = []
 
-    with tqdm(total=ceil(len(scenario_ids) / batch_size)) as pbar:
-        for inputs in dataset:
-            inputs = occupancy_flow_data.add_sdc_fields(inputs)
-            timestep_grids = occupancy_flow_grids.create_ground_truth_timestep_grids(
-                inputs, config
+    for inputs in dataset:
+        inputs = occupancy_flow_data.add_sdc_fields(inputs)
+        timestep_grids = occupancy_flow_grids.create_ground_truth_timestep_grids(
+            inputs, config
+        )
+        true_waypoints = occupancy_flow_grids.create_ground_truth_waypoint_grids(
+            timestep_grids, config
+        )
+
+        pred_waypoint_logits = _get_pred_waypoint_logits(inputs["prediction"])
+        pred_waypoints = _apply_sigmoid_to_occupancy_logits(pred_waypoint_logits)
+
+        tf_metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
+            config, true_waypoints, pred_waypoints
+        )
+
+        tf_stats.add_auc(tf_metrics.vehicles_observed_auc)
+        tf_stats.add_iou(tf_metrics.vehicles_observed_iou)
+        flow.append(tf_metrics.vehicles_flow_epe)
+
+        scenario_id = inputs["scenario/id"].numpy().astype(str)[0]
+        true_waypoints_ = deepcopy(true_waypoints)
+        pytorch_gt_file = (
+            inference_blob_folder.parent.parent
+            / f"{split}_ground_truth"
+            / f"{scenario_id}.npy"
+        )
+        # only care about observed occupancy
+        true_waypoints_.vehicles.observed_occupancy = _read_prediction_file(
+            pytorch_gt_file
+        ).vehicles.observed_occupancy
+
+        torch_metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
+            config, true_waypoints_, pred_waypoints
+        )
+
+        pt_stats.add_auc(torch_metrics.vehicles_observed_auc)
+        pt_stats.add_iou(torch_metrics.vehicles_observed_iou)
+
+        if visualize:
+            write_images(
+                true_waypoints.vehicles.observed_occupancy,
+                pred_waypoints.vehicles.observed_occupancy,
+                tf_metrics,
+                true_waypoints_.vehicles.observed_occupancy,
+                torch_metrics,
             )
-            true_waypoints = occupancy_flow_grids.create_ground_truth_waypoint_grids(
-                timestep_grids, config
-            )
 
-            pred_waypoint_logits = _get_pred_waypoint_logits(inputs["prediction"])
-            pred_waypoints = _apply_sigmoid_to_occupancy_logits(pred_waypoint_logits)
-
-            tf_metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
-                config, true_waypoints, pred_waypoints
-            )
-
-            tf_stats.add_auc(tf_metrics.vehicles_observed_auc)
-            tf_stats.add_iou(tf_metrics.vehicles_observed_iou)
-            flow.append(tf_metrics.vehicles_flow_epe)
-
-            # scenario_id = inputs["scenario/id"].numpy().astype(str)[0]
-            # true_waypoints_ = deepcopy(true_waypoints)
-            # pytorch_gt_file = (
-            #     inference_blob_folder.parent.parent
-            #     / f"{split}_ground_truth"
-            #     / f"{scenario_id}.npy"
-            # )
-            # # only care about observed occupancy
-            # true_waypoints_.vehicles.observed_occupancy = _read_prediction_file(
-            #     pytorch_gt_file
-            # ).vehicles.observed_occupancy
-
-            # torch_metrics = occupancy_flow_metrics.compute_occupancy_flow_metrics(
-            #     config, true_waypoints_, pred_waypoints
-            # )
-
-            # pt_stats.add_auc(torch_metrics.vehicles_observed_auc)
-            # pt_stats.add_iou(torch_metrics.vehicles_observed_iou)
-
-            if visualize:
-                write_images(
-                    true_waypoints.vehicles.observed_occupancy,
-                    pred_waypoints.vehicles.observed_occupancy,
-                    scenario_id,
-                    tf_metrics,
-                    true_waypoints_.vehicles.observed_occupancy,
-                    torch_metrics,
-                )
-
+        if pbar is not None:
             pbar.update(1)
             if pbar.n % 10 == 0:
                 desc = f"{pt_stats} - {tf_stats}"
@@ -287,10 +364,12 @@ def _get_validation_and_prediction(
                     desc += f" EPE: {np.array(flow).mean():.2f}"
                 pbar.set_description(desc)
 
-    return pt_stats, tf_stats
+    return [pt_stats, tf_stats]
 
 
-def evaluate_methods(id_path: Path, pred_path: Path, split, visualize: bool = False):
+def evaluate_methods(
+    id_path: Path, pred_path: Path, split, eval_fn: Callable
+) -> List[MetricData]:
     dev = tf.config.list_physical_devices("GPU")
     if len(dev) > 0:
         tf.config.experimental.set_memory_growth(dev[0], True)
@@ -338,8 +417,7 @@ def evaluate_methods(id_path: Path, pred_path: Path, split, visualize: bool = Fa
         .batch(batch_size)
     )
 
-    pt_stats, tf_stats = _get_validation_and_prediction(
-        dataset, scenario_ids, pred_path, task_config, split, visualize, batch_size
-    )
+    with tqdm(total=ceil(len(scenario_ids) / batch_size)) as pbar:
+        stats = eval_fn(dataset, task_config, pred_path, split, pbar=pbar)
 
-    return pt_stats, tf_stats
+    return stats

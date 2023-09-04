@@ -82,11 +82,14 @@ def evaluate(
     """
     Use waymo evaluation code for calculating IOU/AUC requires exported pytorch predictions
     """
-    from utils.export_tf import evaluate_methods
+    from utils.export_tf import evaluate_methods, _get_validation_and_prediction
+    from functools import partial
+
+    eval_fn = partial(_get_validation_and_prediction, visualize=visualize)
 
     pred_path = workspace / run_hash / f"{split}_blobs"
     pt_eval, tf_eval = evaluate_methods(
-        get_id_path(split.name), pred_path, split, visualize
+        get_id_path(split.name), pred_path, split, eval_fn
     )
 
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
@@ -94,6 +97,33 @@ def evaluate(
         cur = con.cursor()
         upsert_eval(cur, run_hash, meta.epoch, pt_eval)
         upsert_eval(cur, run_hash, meta.epoch, tf_eval)
+        con.commit()
+
+
+@app.command()
+def waypoint_evaluate(
+    workspace: Path, run_hash: str, split: Annotated[Mode, typer.Option()]
+):
+    """Evaluate waymo motion and collect waypoint accuarcy as well as mean"""
+    from utils.export_tf import evaluate_methods, _evaluate_timepoints_and_mean
+    from utils.eval_data import (
+        create_waypoints_table,
+        metric_data_list_to_dict,
+        upsert_waypoints,
+    )
+
+    pred_path = workspace / run_hash / f"{split}_blobs"
+    metrics = evaluate_methods(
+        get_id_path(split.name), pred_path, split, _evaluate_timepoints_and_mean
+    )
+
+    data_dict = metric_data_list_to_dict(metrics)
+    meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
+
+    with closing(get_db(workspace)) as con:
+        cur = con.cursor()
+        create_waypoints_table(cur)
+        upsert_waypoints(cur, run_hash, meta, data_dict)
         con.commit()
 
 

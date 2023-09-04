@@ -1,10 +1,11 @@
-from dataclasses import dataclass, field
-from typing import List
+import itertools
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, List, Iterable
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from konductor.utilities.metadata import Metadata
 
 
@@ -30,6 +31,53 @@ class MetricData:
 
     def __str__(self) -> str:
         return f"{self.name} IoU: {self.iou:.3f}, AUC: {self.auc:.3f}"
+
+
+def metric_data_list_to_dict(metric_data: Iterable[MetricData]) -> Dict[str, float]:
+    """Reformat the list of metric data to a dict"""
+    ret: Dict[str, float] = {}
+    for sample in metric_data:
+        suffix = sample.name.split("_")[1]
+        ret[f"auc_{suffix}"] = sample.auc
+        ret[f"iou_{suffix}"] = sample.iou
+    return ret
+
+
+def create_waypoints_table(cur: sqlite3.Cursor):
+    """Create table for waypoint performance if it doesn't already exist"""
+    table_cmd = "CREATE TABLE IF NOT EXISTS waypoints "
+    table_cmd += "(hash TEXT PRIMARY KEY, epoch INT, iteration INT"
+
+    # Create list of timestamps + mean (for convenience)
+    for key, ts in itertools.product(["iou", "auc"], list(range(1, 9)) + ["mean"]):
+        table_cmd += f", {key}_{ts} FLOAT"
+    table_cmd += ")"
+
+    cur.execute(table_cmd)
+
+
+def upsert_waypoints(
+    cur: sqlite3.Cursor, run_hash: str, metadata: Metadata, data: Dict[str, float]
+):
+    """Upsert experiment waypoints performance"""
+
+    # Split into key value lists
+    keys: List[str] = []
+    values: List[float] = []
+    for k, v in data.items():
+        keys.append(k)
+        values.append(v)
+
+    # Create strings for sql command
+    key_string = ", ".join(keys)
+    set_string = ", ".join([f"{k}=excluded.{k}" for k in keys])
+
+    cur.execute(
+        f"INSERT INTO waypoints (hash, epoch, iteration, {key_string}) "
+        f"VALUES (?, ?, ?{', ?' * len(keys)}) ON CONFLICT (hash) DO UPDATE "
+        f"SET epoch=excluded.epoch, iteration=excluded.iteration, {set_string};",
+        [run_hash, metadata.epoch, metadata.iteration, *values],
+    )
 
 
 def get_db(path: Path):
