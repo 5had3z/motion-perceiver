@@ -85,6 +85,7 @@ def initialize(
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
 
     model = load_model(exp_cfg)
+    model.encoder.random_input_indicies = 0
 
     if no_overrides:
         return model, get_dataloader(data_cfg, split)
