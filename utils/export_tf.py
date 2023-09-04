@@ -277,6 +277,7 @@ def _evaluate_timepoints_and_mean(
 
         perf[0].add_auc(metrics.vehicles_observed_auc)
         perf[0].add_iou(metrics.vehicles_observed_iou)
+        perf[0].add_epe(metrics.vehicles_flow_epe)
 
         for waypoint in range(config.num_waypoints):
             true_waypoint = sample_waypoint(true_waypoints, waypoint)
@@ -286,6 +287,7 @@ def _evaluate_timepoints_and_mean(
             )
             perf[waypoint + 1].add_auc(metrics.vehicles_observed_auc)
             perf[waypoint + 1].add_iou(metrics.vehicles_observed_iou)
+            perf[waypoint + 1].add_epe(metrics.vehicles_flow_epe)
 
         if pbar is not None:
             pbar.update(1)
@@ -306,7 +308,6 @@ def _get_validation_and_prediction(
     """Iterate over all test examples in one shard and generate predictions."""
     pt_stats = MetricData("pytorch")
     tf_stats = MetricData("tensorflow")
-    flow: List[float] = []
 
     for inputs in dataset:
         inputs = occupancy_flow_data.add_sdc_fields(inputs)
@@ -326,7 +327,7 @@ def _get_validation_and_prediction(
 
         tf_stats.add_auc(tf_metrics.vehicles_observed_auc)
         tf_stats.add_iou(tf_metrics.vehicles_observed_iou)
-        flow.append(tf_metrics.vehicles_flow_epe)
+        tf_stats.add_epe(tf_metrics.vehicles_flow_epe)
 
         scenario_id = inputs["scenario/id"].numpy().astype(str)[0]
         true_waypoints_ = deepcopy(true_waypoints)
@@ -346,11 +347,13 @@ def _get_validation_and_prediction(
 
         pt_stats.add_auc(torch_metrics.vehicles_observed_auc)
         pt_stats.add_iou(torch_metrics.vehicles_observed_iou)
+        pt_stats.add_epe(-1.0)
 
         if visualize:
             write_images(
                 true_waypoints.vehicles.observed_occupancy,
                 pred_waypoints.vehicles.observed_occupancy,
+                scenario_id,
                 tf_metrics,
                 true_waypoints_.vehicles.observed_occupancy,
                 torch_metrics,
@@ -360,8 +363,6 @@ def _get_validation_and_prediction(
             pbar.update(1)
             if pbar.n % 10 == 0:
                 desc = f"{pt_stats} - {tf_stats}"
-                if len(flow) > 0:
-                    desc += f" EPE: {np.array(flow).mean():.2f}"
                 pbar.set_description(desc)
 
     return [pt_stats, tf_stats]

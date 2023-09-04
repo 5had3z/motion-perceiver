@@ -14,12 +14,16 @@ class MetricData:
     name: str
     _iou: List[float] = field(default_factory=list)
     _auc: List[float] = field(default_factory=list)
+    _epe: List[float] = field(default_factory=list)
 
     def add_iou(self, iou: float) -> None:
         self._iou.append(iou)
 
     def add_auc(self, auc: float) -> None:
         self._auc.append(auc)
+
+    def add_epe(self, epe: float) -> None:
+        self._epe.append(epe)
 
     @property
     def auc(self) -> float:
@@ -29,8 +33,12 @@ class MetricData:
     def iou(self) -> float:
         return np.array(self._iou).mean()
 
+    @property
+    def epe(self) -> float:
+        return np.array(self._epe).mean()
+
     def __str__(self) -> str:
-        return f"{self.name} IoU: {self.iou:.3f}, AUC: {self.auc:.3f}"
+        return f"{self.name} IoU:{self.iou:.3f}-AUC:{self.auc:.3f}-EPE:{self.epe:.2f}"
 
 
 def metric_data_list_to_dict(metric_data: Iterable[MetricData]) -> Dict[str, float]:
@@ -40,6 +48,7 @@ def metric_data_list_to_dict(metric_data: Iterable[MetricData]) -> Dict[str, flo
         suffix = sample.name.split("_")[1]
         ret[f"auc_{suffix}"] = sample.auc
         ret[f"iou_{suffix}"] = sample.iou
+        ret[f"epe_{suffix}"] = sample.epe
     return ret
 
 
@@ -49,7 +58,9 @@ def create_waypoints_table(cur: sqlite3.Cursor):
     table_cmd += "(hash TEXT PRIMARY KEY, epoch INT, iteration INT"
 
     # Create list of timestamps + mean (for convenience)
-    for key, ts in itertools.product(["iou", "auc"], list(range(1, 9)) + ["mean"]):
+    for key, ts in itertools.product(
+        ["iou", "auc", "epe"], list(range(1, 9)) + ["mean"]
+    ):
         table_cmd += f", {key}_{ts} FLOAT"
     table_cmd += ")"
 
