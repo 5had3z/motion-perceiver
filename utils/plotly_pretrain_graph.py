@@ -3,7 +3,7 @@ from typing import Dict, List
 
 import dash_cytoscape as cyto
 import yaml
-from dash import Input, Output, callback, dcc, html
+from dash import Input, Output, callback, html
 from konductor.metadata.manager import Metadata
 from konductor.init import ExperimentInitConfig
 from konductor.webserver.utils import Experiment, fill_experiments
@@ -12,19 +12,17 @@ EXPERIMENTS: List[Experiment] = []
 
 layout = html.Div(
     [
-        html.H1("Pretrained Depenency Graph"),
+        html.H2("Pretrained Depenency Graph"),
+        html.Div(
+            "If the experiment is a parent or child in a pretraining dependency graph, it will show up here"
+        ),
         cyto.Cytoscape(
             id="cytoscape",
             elements=[
                 {
-                    "data": {"id": "one", "label": "Node 1"},
+                    "data": {"id": "dummy", "label": "No Dependencies"},
                     "position": {"x": 75, "y": 75},
                 },
-                {
-                    "data": {"id": "two", "label": "Node 2"},
-                    "position": {"x": 200, "y": 200},
-                },
-                {"data": {"source": "one", "target": "two"}},
             ],
             layout={"name": "breadthfirst", "directed": True},
             style={"width": "100%", "height": "700px"},
@@ -40,11 +38,17 @@ def init_exp(root_dir: str):
 
     elements_data: List[Dict[str, Dict[str, str]]] = []
 
+    should_add = {}
+    potentials = {}
+
     for e in EXPERIMENTS:
         exp_id = str(e.root.name)
         exp_meta = Metadata.from_yaml(e.root / "metadata.yaml")
-        # Add Node
-        elements_data.append({"data": {"id": exp_id, "label": exp_meta.brief}})
+        potentials[exp_id] = {"data": {"id": exp_id, "label": exp_meta.brief}}
+
+        # Initialise potential node as false
+        if exp_id not in should_add:
+            should_add[exp_id] = False
 
         cfg_path = e.root / "train_config.yml"
         with open(cfg_path, "r", encoding="utf-8") as f:
@@ -56,5 +60,13 @@ def init_exp(root_dir: str):
         if "pretrained" in config.model[0].args:
             source = config.model[0].args["pretrained"].split(".")[0]
             elements_data.append({"data": {"source": source, "target": exp_id}})
+
+            # Mark node as true
+            should_add[exp_id] = True
+            should_add[source] = True
+
+    for id, data in potentials.items():
+        if should_add[id]:
+            elements_data.append(data)
 
     return elements_data
