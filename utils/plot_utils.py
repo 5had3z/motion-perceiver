@@ -20,7 +20,7 @@ def data_by_time(exp: Experiment, split: str, key: str) -> pd.Series:
     )
     data = data.transpose().sort_index()
 
-    series = data[data.columns.values[0]]
+    series: pd.Series = data[data.columns.values[0]]
     series.name = exp.name
 
     return series
