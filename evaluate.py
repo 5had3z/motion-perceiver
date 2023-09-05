@@ -187,7 +187,7 @@ def auto_evaluate(
     If "out of date" or missing an entry then we can run waymo evaluation on that experiment.
     """
     update_metadata(workspace)
-    need_update = find_outdated_runs(workspace)
+    need_update = find_outdated_runs(workspace, "waypoints")
     print(f"{len(need_update)} experiments to update: {need_update}")
 
     emph = lambda x, c: f"{c+Style.BRIGHT}{x}{Style.RESET_ALL}"
@@ -200,7 +200,7 @@ def auto_evaluate(
         try:
             print(emph(f"Running {run_hash}", Fore.BLUE))
             generate(workspace, run_hash, Mode.val)
-            evaluate(workspace, run_hash, Mode.val)
+            waypoint_evaluate(workspace, run_hash, Mode.val)
             print(
                 emph(
                     f"Updated {idx+1}/{len(need_update)} Experiments"

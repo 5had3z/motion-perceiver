@@ -127,10 +127,12 @@ def upsert_eval(cur: sqlite3.Cursor, run_hash: str, epoch: int, data: MetricData
     )
 
 
-def find_outdated_runs(workspace: Path) -> List[str]:
+def find_outdated_runs(workspace: Path, target_table: str) -> List[str]:
     con = sqlite3.connect(workspace / "results.db")
     meta = pd.read_sql_query("SELECT epoch, hash FROM metadata", con, index_col="hash")
-    perf = pd.read_sql_query("SELECT epoch, hash FROM pytorch", con, index_col="hash")
+    perf = pd.read_sql_query(
+        f"SELECT epoch, hash FROM {target_table}", con, index_col="hash"
+    )
     con.close()
 
     missing = meta.index.difference(perf.index).to_list()
