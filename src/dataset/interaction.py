@@ -35,7 +35,7 @@ _TIMESPAN: int = 40
 
 
 @dataclass
-@DATASET_REGISTRY.register_module("interacton")
+@DATASET_REGISTRY.register_module("interaction")
 class InteractionConfig(MotionDatasetConfig):
     def __post_init__(self):
         super().__post_init__()

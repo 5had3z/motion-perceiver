@@ -2,7 +2,6 @@
 
 """Overrides model and dataloader params to generate the full video"""
 import argparse
-import enum
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ import cv2
 import numpy as np
 import torch
 import typer
+from konductor.data import Mode
 from konductor.trainer.init import get_dataset_config, get_experiment_cfg
 from konductor.utilities.pbar import LivePbar
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
@@ -27,12 +27,6 @@ from utils.visual import (
     write_flow_video,
     write_occupancy_video,
 )
-
-
-class Mode(str, enum.Enum):
-    train = "train"
-    val = "val"
-
 
 app = typer.Typer()
 
@@ -282,7 +276,7 @@ def make_video(
     # Optional override dataset
     if dataset is not None:
         exp_cfg.data[0].dataset.type = dataset
-    exp_cfg.set_batch_size(batch_size, "val")
+    exp_cfg.set_batch_size(batch_size, split.name)
 
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
     model, dataloader = initialize(exp_cfg, split)
