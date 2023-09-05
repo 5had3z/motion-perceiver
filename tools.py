@@ -2,6 +2,7 @@
 
 """Overrides model and dataloader params to generate the full video"""
 import argparse
+import enum
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,12 @@ from utils.visual import (
     write_flow_video,
     write_occupancy_video,
 )
+
+
+class Mode(str, enum.Enum):
+    train = "train"
+    val = "val"
+
 
 app = typer.Typer()
 
@@ -149,8 +156,6 @@ def generate_videos(
 
             data: Dict[str, Tensor] = data[0]  # remove list dimension
             outputs = model(**data)
-            for key in outputs:
-                outputs[key][outputs[key] < 0] *= 8.0
 
             # Reformat the ground truth images
             if isinstance(model.encoder, MotionEncoder2Phase):
@@ -263,6 +268,7 @@ def add_eval_args(parser: argparse.ArgumentParser) -> None:
 @app.command()
 def make_video(
     path: Path,
+    split: Annotated[Mode, typer.Option()] = Mode.val,
     n_samples: Annotated[int, typer.Option()] = 16,
     workers: Annotated[int, typer.Option()] = 4,
     batch_size: Annotated[int, typer.Option()] = 8,
@@ -279,10 +285,11 @@ def make_video(
     exp_cfg.set_batch_size(batch_size, "val")
 
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
-    model, dataloader = initialize(exp_cfg, "val")
+    model, dataloader = initialize(exp_cfg, split)
+    # model.encoder.input_indicies = set(range(0, 91, 10))
 
     eval_config = EvalConfig(
-        exp_cfg.work_dir / exp_cfg.data[0].dataset.type,
+        exp_cfg.work_dir / exp_cfg.data[0].dataset.type / str(split.name),
         batch_size,
         n_samples,
         threshold,
