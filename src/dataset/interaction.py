@@ -37,6 +37,10 @@ _TIMESPAN: int = 40
 @dataclass
 @DATASET_REGISTRY.register_module("interaction")
 class InteractionConfig(MotionDatasetConfig):
+    max_agents = _MAX_AGENTS
+    sequence_length = _TIMESPAN
+    current_time_idx = 10
+
     def __post_init__(self):
         super().__post_init__()
         self.basepath = self.basepath / "interaction" / "multi" / "tfrecord"

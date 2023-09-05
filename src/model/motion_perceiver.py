@@ -525,7 +525,8 @@ class MotionEncoder3Ctx(MotionEncoder3):
             x_adapt, x_mask = self.input_adapter(agents[tidx], agents_mask[tidx])
             latent = self.update_layer(latent, x_adapt, x_mask)
 
-            if self.signal_encoder is not None:
+            if self.signal_encoder is not None and signals is not None:
+                assert signals_mask is not None
                 s_adapt, s_mask = self.signal_encoder(signals[tidx], signals_mask[tidx])
                 latent = self.signal_attn(latent, s_adapt, s_mask)
 

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
 """Overrides model and dataloader params to generate the full video"""
-import argparse
+import inspect
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 import cv2
 import numpy as np
 import torch
 import typer
-from konductor.data import Mode
+from konductor.data import DATASET_REGISTRY, ExperimentInitConfig, Mode
 from konductor.trainer.init import get_dataset_config, get_experiment_cfg
 from konductor.utilities.pbar import LivePbar
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
@@ -244,19 +244,24 @@ def visualise_output_attention(
         break
 
 
-def add_eval_args(parser: argparse.ArgumentParser) -> None:
-    """Add additonal evaluation settings to parser"""
-    parser.add_argument("--n_videos", type=int, default=128)
-    parser.add_argument("--video_thresh", type=float)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument(
-        "--dataset_override", type=str, help="override trained dataset for testing"
-    )
-    parser.add_argument(
-        "--scenario_id",
-        type=Path,
-        help="Optional path to sequence ids to run evaluation on",
-    )
+def override_dataset(exp_cfg: ExperimentInitConfig, new_dataset: str):
+    """Override the original dataset while filtering unknown args"""
+    new_dataset_type = DATASET_REGISTRY[new_dataset]
+    new_kwargs = inspect.signature(new_dataset_type).parameters
+
+    filtered_args: Dict[str, Any] = {}
+    unused_args: Set[str] = set()
+    for k, v in exp_cfg.data[0].dataset.args.items():
+        if k in new_kwargs:
+            filtered_args[k] = v
+        else:
+            unused_args.add(k)
+
+    if len(unused_args) > 0:
+        print(f"Unused kwargs in {new_dataset}: {unused_args}")
+
+    exp_cfg.data[0].dataset.type = new_dataset
+    exp_cfg.data[0].dataset.args = filtered_args
 
 
 @app.command()
@@ -273,9 +278,10 @@ def make_video(
     exp_cfg = get_experiment_cfg(path.parent, None, path.name)
     exp_cfg.set_workers(workers)
 
-    # Optional override dataset
+    # Optional override dataset, filter out different kwargs
     if dataset is not None:
-        exp_cfg.data[0].dataset.type = dataset
+        override_dataset(exp_cfg, dataset)
+
     exp_cfg.set_batch_size(batch_size, split.name)
 
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
