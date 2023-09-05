@@ -1,31 +1,31 @@
 """Dataset for the INTERACTION dataset that consists of folders of CSVs
 """
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
-from nvidia.dali import pipeline_def, Pipeline, newaxis, fn
-from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
+from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
+from nvidia.dali import Pipeline, fn, newaxis, pipeline_def
+from nvidia.dali.types import Constant, DALIDataType
 
 try:
     from .common import (
-        get_tfrecord_cache,
-        MotionDatasetConfig,
-        get_sample_idxs,
         VALID_AUG,
+        MotionDatasetConfig,
         dali_rad2deg,
+        get_sample_idxs,
+        get_tfrecord_cache,
     )
 except ImportError:
     from common import (
-        get_tfrecord_cache,
-        MotionDatasetConfig,
-        get_sample_idxs,
         VALID_AUG,
+        MotionDatasetConfig,
         dali_rad2deg,
+        get_sample_idxs,
+        get_tfrecord_cache,
     )
 
 
@@ -50,8 +50,6 @@ class InteractionConfig(MotionDatasetConfig):
         return asdict(self)
 
     def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        if self.scenario_id:
-            raise NotImplementedError("Scenario ID currently not embedded in data")
         tfrec_file = self.basepath / f"interaction_{mode.name}.tfrecord"
 
         output_map = ["agents", "agents_valid"]
@@ -61,6 +59,8 @@ class InteractionConfig(MotionDatasetConfig):
             output_map.extend(["time_idx", "heatmap"])
         if self.flow_mask:
             output_map.append("flow")
+        if self.scenario_id:
+            output_map.append("scenario_id")
 
         datapipe = interation_pipeline(tfrec_file, cfg=self, **kwargs)
         return datapipe, output_map, tfrec_file.stem, -1
@@ -104,6 +104,7 @@ def interation_pipeline(
     features_description = {}
     features_description.update(roadgraph_features)
     features_description.update(state_features)
+    features_description["scenario_id"] = tfrec.FixedLenFeature([], tfrec.string, "")
 
     tfrec_idx = get_tfrecord_cache(record_file.parent, [record_file.name])[0]
 
@@ -130,9 +131,11 @@ def interation_pipeline(
     if any(a.type == "random_rotate" for a in augmentations):
         angle_rad = fn.random.uniform(range=[-np.pi, np.pi], dtype=DALIDataType.FLOAT)
     else:
-        angle_rad = Constant(0.0, dtype=DALIDataType.FLOAT)
+        angle_rad = Constant(0.0, device="cpu", dtype=DALIDataType.FLOAT)
 
-    rot_mat = fn.transforms.rotation(angle=dali_rad2deg(angle_rad))
+    rot_mat = fn.transforms.rotation(
+        angle=fn.reshape(dali_rad2deg(angle_rad), shape=[])
+    )
     xy_tf = fn.transforms.combine(center, rot_mat)
 
     # Transform XY
@@ -233,4 +236,9 @@ def interation_pipeline(
         if cfg.flow_mask:
             outputs.append(fn.flow_mask(data_all, data_valid, time_idx, **occ_kwargs))
 
-    return tuple(o.gpu() for o in outputs)
+    outputs = [o.gpu() for o in outputs]
+
+    if cfg.scenario_id:
+        outputs.append(fn.pad(inputs["scenario_id"], fill_value=0))
+
+    return tuple(outputs)

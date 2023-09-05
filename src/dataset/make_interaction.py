@@ -1,16 +1,18 @@
-import argparse
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from pathlib import Path
 from multiprocessing import get_context
+from pathlib import Path
+from typing import Dict, List, Optional
 from xml.etree import ElementTree
-from typing import Dict, List
 
 import numpy as np
 import tensorflow as tf
-from konductor.utilities.pbar import LivePbar
-
+import typer
 from interaction import _MAX_AGENTS, _MAX_ROADGRAPH, _TIMESPAN
+from konductor.utilities.pbar import LivePbar
+from typing_extensions import Annotated
+
+app = typer.Typer()
 
 
 class IClass(Enum):
@@ -162,12 +164,12 @@ class InteractionMap:
             stype[start_idx:end_idx] = spline.type.value
             start_idx = end_idx
 
-        return {"xyz": xyz, "valid": valid, "id": id, "type": stype}
+        return {"xyz": xyz, "valid": valid, "id": uid, "type": stype}
 
 
 @dataclass
 class InteractionRecord:
-    scenario_id: int
+    scenario_id: str
 
     # fmt: off
     state_x: np.ndarray = field(default_factory=lambda: np.zeros((_MAX_AGENTS, _TIMESPAN), dtype=float))
@@ -216,21 +218,38 @@ class InteractionRecord:
             features=tf.train.Features(
                 # fmt: off
                 feature={
-                    "state/x":              tf.train.Feature(float_list=tf.train.FloatList(value=self.state_x.flatten())),
-                    "state/y":              tf.train.Feature(float_list=tf.train.FloatList(value=self.state_y.flatten())),
-                    "state/t":              tf.train.Feature(float_list=tf.train.FloatList(value=self.state_t.flatten())),
-                    "state/vx":             tf.train.Feature(float_list=tf.train.FloatList(value=self.state_vx.flatten())),
-                    "state/vy":             tf.train.Feature(float_list=tf.train.FloatList(value=self.state_vy.flatten())),
-                    "state/length":         tf.train.Feature(float_list=tf.train.FloatList(value=self.state_length.flatten())),
-                    "state/width":          tf.train.Feature(float_list=tf.train.FloatList(value=self.state_width.flatten())),
-                    "state/timestamp_ms":   tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_timestamp.flatten())),
-                    "state/valid":          tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_valid.flatten())),
-                    "state/id":             tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_id.flatten())),
-                    "state/type":           tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_type.flatten())),
-                    "roadgraph/xyz":        tf.train.Feature(float_list=tf.train.FloatList(value=self.roadgraph_xyz.flatten())),
-                    "roadgraph/valid":      tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_valid.flatten())),
-                    "roadgraph/id":         tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_id.flatten())),
-                    "roadgraph/type":       tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_type.flatten())),
+                    "state/x":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_x.flatten())),
+                    "state/y":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_y.flatten())),
+                    "state/t":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_t.flatten())),
+                    "state/vx":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_vx.flatten())),
+                    "state/vy":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_vy.flatten())),
+                    "state/length":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_length.flatten())),
+                    "state/width":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.state_width.flatten())),
+                    "state/timestamp_ms":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_timestamp.flatten())),
+                    "state/valid":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_valid.flatten())),
+                    "state/id":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_id.flatten())),
+                    "state/type":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.state_type.flatten())),
+                    "roadgraph/xyz":
+                        tf.train.Feature(float_list=tf.train.FloatList(value=self.roadgraph_xyz.flatten())),
+                    "roadgraph/valid":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_valid.flatten())),
+                    "roadgraph/id":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_id.flatten())),
+                    "roadgraph/type":
+                        tf.train.Feature(int64_list=tf.train.Int64List(value=self.roadgraph_type.flatten())),
+                    "scenario_id":
+                        tf.train.Feature(bytes_list=tf.train.BytesList(value=[self.scenario_id.encode("utf-8")])),
                 }
                 # fmt: on
             )
@@ -280,27 +299,29 @@ def get_map_path(csv_file: Path) -> Path:
     return base_path / "maps" / f"{filename}.osm_xy"
 
 
-def parse_csv_to_datasets(file_idx: int, csv_file: Path) -> List[InteractionRecord]:
+def parse_csv_to_datasets(csv_file: Path) -> List[InteractionRecord]:
     """Convert raw interaction data to list of records"""
-    tf_datasets: Dict[int, InteractionRecord] = {}
-    print(f"Started [{file_idx}]: {csv_file.name}")
+    print(f"Started {csv_file.name}")
 
-    imap = parse_map_osm(get_map_path(csv_file))
-
+    # Transform csv data into scenarios
+    tf_datasets: Dict[str, InteractionRecord] = {}
     with open(csv_file, "r", encoding="utf-8") as f:
         f.readline()  # skip header
         while line := f.readline().strip():
             sample = InteractionSample.from_csv_line(line)
-            sample.case = 100 * sample.case + file_idx
-            if sample.case not in tf_datasets:
-                tf_datasets[sample.case] = InteractionRecord(sample.case)
-            tf_datasets[sample.case].add_sample(sample)
+            scenario_id = csv_file.stem + str(sample.case)
+            if scenario_id not in tf_datasets:
+                tf_datasets[scenario_id] = InteractionRecord(scenario_id)
+            tf_datasets[scenario_id].add_sample(sample)
 
+    # Add roadgraph to scenarios
+    imap = parse_map_osm(get_map_path(csv_file))
     for dataset in tf_datasets.values():
         dataset.add_roadgraph_tf(imap)
 
-    print(f"Finished Parsing [{file_idx}]: {csv_file.name}")
+    print(f"Finished Parsing: {csv_file.name}")
 
+    # Return list of scenarios
     return list(tf_datasets.values())
 
 
@@ -330,8 +351,8 @@ def split_to_record(split_folder: Path, output_rec: Path) -> None:
     # print(f"{split_folder.name}: flattened datasets")
 
     tf_datasets = []
-    for fidx, csv_file in enumerate(split_folder.glob("*.csv")):
-        tf_datasets.extend(parse_csv_to_datasets(fidx, csv_file))
+    for csv_file in split_folder.glob("*.csv"):
+        tf_datasets.extend(parse_csv_to_datasets(csv_file))
 
     # Write Dataset to TF Record
     with tf.io.TFRecordWriter(str(output_rec)) as filew:
@@ -343,8 +364,8 @@ def split_to_record(split_folder: Path, output_rec: Path) -> None:
                 pbar.update(1)
 
 
-def run_mp(data_root: Path, output_path: Path) -> None:
-    """Run dataset generation in parallel thread pool"""
+def run_parallel(data_root: Path, output_path: Path) -> None:
+    """Run dataset generation for each split in parallel thread pool"""
     mp = get_context("spawn").Pool(processes=2)
     for split in ["train", "val"]:
         split_folder = data_root / split
@@ -362,17 +383,23 @@ def run_serial(data_root: Path, output_path: Path) -> None:
         split_to_record(split_folder, record_path)
 
 
-def convert_dataset() -> None:
+@app.command()
+def convert_dataset(
+    src: Path,
+    dst: Annotated[Optional[Path], typer.Argument()] = None,
+    parallel: Annotated[bool, typer.Option()] = True,
+) -> None:
     """Converts fragmented CSVs to single TFRecord Database for Training"""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--root", help="Path to top-level directory", type=Path)
-    args = parser.parse_args()
 
-    tf_dir: Path = args.root / "tfrecord"
-    tf_dir.mkdir(exist_ok=True)
+    if dst is None:
+        dst = src / "tfrecord"
+        dst.mkdir(exist_ok=True)
 
-    run_mp(args.root, tf_dir)
+    if parallel:
+        run_parallel(src, dst)
+    else:
+        run_serial(src, dst)
 
 
 if __name__ == "__main__":
-    convert_dataset()
+    app()

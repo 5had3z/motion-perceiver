@@ -3,21 +3,21 @@ Instead of dealing with each different dataset and its edge
 cases (sanitation etc.), I can use trajdata to load batches,
 then I can serialise into tfrecord format that I want.
 """
-from pathlib import Path
-from multiprocessing import cpu_count
 import shutil
+from multiprocessing import cpu_count
+from pathlib import Path
 from typing import Dict, List, Optional
-from typing_extensions import Annotated
 
-from konductor.utilities.pbar import LivePbar
-import torch
-from torch import Tensor
-from torch.utils.data import DataLoader
 import tensorflow as tf
-from trajdata import SceneBatch, AgentType, UnifiedDataset
-from trajdata.visualization.vis import plot_scene_batch
+import torch
 import typer
 import yaml
+from konductor.utilities.pbar import LivePbar
+from torch import Tensor
+from torch.utils.data import DataLoader
+from trajdata import AgentType, SceneBatch, UnifiedDataset
+from trajdata.visualization.vis import plot_scene_batch
+from typing_extensions import Annotated
 
 app = typer.Typer()
 
