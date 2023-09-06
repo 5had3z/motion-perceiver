@@ -20,7 +20,14 @@ except ModuleNotFoundError:
     pass  # Only needed for ode model
 
 from . import perceiver_io as pio
-from ._iadapter import ImageIA, InputAdapter, RasterEncoder, SignalIA, TrafficIA
+from ._iadapter import (
+    ImageIA,
+    InputAdapter,
+    RasterEncoder,
+    SignalIA,
+    TrafficIA,
+    ResNet8Encoder,
+)
 from ._oadapter import (
     ClassHeatmapOA,
     ClassificationOA,
@@ -369,9 +376,11 @@ class MotionEncoder3Ctx(MotionEncoder3):
             self.signal_attn = None
 
         if roadgraph_ia is not None:
-            self.roadgraph_encoder = {"image": ImageIA, "conv1": RasterEncoder}[
-                roadgraph_ia["type"]
-            ](**roadgraph_ia["args"])
+            self.roadgraph_encoder = {
+                "image": ImageIA,
+                "conv1": RasterEncoder,
+                "resnet8": ResNet8Encoder,
+            }[roadgraph_ia["type"]](**roadgraph_ia["args"])
 
             self.road_attn = pio.Sequential(
                 pio.cross_attention_layer(

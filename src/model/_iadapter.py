@@ -9,6 +9,7 @@ import logging
 import einops
 import torch
 from torch import nn, Tensor
+from torchvision.models.resnet import BasicBlock, conv1x1
 
 
 def _debug_plot(tensor: Tensor, figname: str) -> None:
@@ -515,3 +516,99 @@ class RasterEncoder(InputAdapter):
         x_pos = einops.repeat(self.position_encoding, "... -> b ...", b=raster.shape[0])
         x_enc = torch.cat([x, x_pos], dim=-1)
         return x_enc
+
+
+class ResNet8(nn.Module):
+    """Basic ResNet-8 Implementation"""
+
+    def __init__(self, in_ch: int = 3, base_ch: int = 32) -> None:
+        super().__init__()
+
+        self.in_bottleneck = nn.Sequential(
+            nn.Conv2d(in_ch, base_ch, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(base_ch),
+            nn.ReLU(inplace=True),
+        )
+
+        self.layer1 = self._make_layer(base_ch, base_ch * 2, stride=1)
+        self.layer2 = self._make_layer(
+            self.layer1.conv2.out_channels, base_ch * 3, stride=2
+        )
+        self.layer3 = self._make_layer(
+            self.layer2.conv2.out_channels, base_ch * 4, stride=2
+        )
+
+    @property
+    def out_channels(self) -> int:
+        return self.layer3.conv2.out_channels
+
+    @staticmethod
+    def _make_layer(in_ch: int, out_ch: int, stride: int) -> BasicBlock:
+        """Make ResNet Layer"""
+        expansion = BasicBlock.expansion
+        if stride != 1 or in_ch != out_ch * expansion:
+            downsample = nn.Sequential(
+                conv1x1(in_ch, out_ch * expansion, stride),
+                nn.BatchNorm2d(out_ch * expansion),
+            )
+        else:
+            downsample = None
+
+        return BasicBlock(in_ch, out_ch, stride, downsample)
+
+    def forward(self, in_data: Tensor) -> Tensor:
+        out = self.in_bottleneck(in_data)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        return out
+
+
+class ResNet8Encoder(InputAdapter):
+    """Input encoder that uses ResNet-8"""
+
+    def __init__(
+        self,
+        feat_ch: int,
+        avg_pool_shape: Tuple[int, int],
+        num_frequency_bands: int,
+        max_frequency: float | None = None,
+        input_ch: int = 3,
+        resnet_ch: int = 32,
+    ):
+        pos_enc_ch = len(avg_pool_shape) * (2 * num_frequency_bands)
+        super().__init__(num_input_channels=feat_ch + pos_enc_ch)
+
+        self.encoder = ResNet8(input_ch, resnet_ch)
+        self.avg_pool = nn.AdaptiveAvgPool2d(avg_pool_shape)
+        self.feat_conv = conv1x1(self.encoder.out_channels, feat_ch)
+
+        # create encodings for single example
+        pos = _generate_positions_for_encoding(avg_pool_shape)
+        enc = _generate_position_encodings(
+            pos,
+            num_frequency_bands,
+            None if max_frequency is None else [max_frequency] * 2,
+            False,
+        )
+
+        # flatten encodings along spatial dimensions
+        enc = einops.rearrange(enc, "... c -> (...) c")
+
+        # position encoding prototype
+        self.register_buffer("position_encoding", enc, persistent=False)
+
+    def forward(self, image: Tensor) -> Tensor:
+        """Tokenize image with resnet-8 encoding"""
+        # Encode image
+        encoded = self.encoder(image)
+        encoded = self.avg_pool(encoded)
+        encoded = self.feat_conv(encoded)
+        tokenized = einops.rearrange(encoded, "b c ... -> b (...) c")
+
+        # repeat position encoding along batch dimension
+        pos_enc = einops.repeat(
+            self.position_encoding, "... -> b ...", b=image.shape[0]
+        )
+        final_tokenized = torch.cat([pos_enc, tokenized], dim=-1)
+        return final_tokenized
