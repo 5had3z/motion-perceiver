@@ -78,6 +78,7 @@ def evaluate(
     run_hash: str,
     split: Annotated[Mode, typer.Option()],
     visualize: Annotated[bool, typer.Option()] = False,
+    save: Annotated[bool, typer.Option(help="Save result to db")] = True,
 ):
     """
     Use waymo evaluation code for calculating IOU/AUC requires exported pytorch predictions
@@ -92,6 +93,9 @@ def evaluate(
         get_id_path(split.name), pred_path, split, eval_fn
     )
 
+    if not save:
+        return
+
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
     with closing(get_db(workspace)) as con:
         cur = con.cursor()
@@ -102,7 +106,10 @@ def evaluate(
 
 @app.command()
 def waypoint_evaluate(
-    workspace: Path, run_hash: str, split: Annotated[Mode, typer.Option()]
+    workspace: Path,
+    run_hash: str,
+    split: Annotated[Mode, typer.Option()],
+    save: Annotated[bool, typer.Option(help="Save result to db")] = True,
 ):
     """Evaluate waymo motion and collect waypoint accuarcy as well as mean"""
     from utils.export_tf import evaluate_methods, _evaluate_timepoints_and_mean
@@ -116,6 +123,9 @@ def waypoint_evaluate(
     metrics = evaluate_methods(
         get_id_path(split.name), pred_path, split, _evaluate_timepoints_and_mean
     )
+
+    if not save:
+        return
 
     data_dict = metric_data_list_to_dict(metrics)
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
