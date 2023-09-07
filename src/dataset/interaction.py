@@ -121,7 +121,7 @@ def interation_pipeline(
     data_valid = fn.cast(inputs["state/valid"], dtype=DALIDataType.INT32)
 
     data_xy = fn.stack(inputs["state/x"], inputs["state/y"], axis=2)
-    # Center coordinate system based off vehicles
+    # Center coordinate system based off median vehicle position
     center = fn.transforms.translation(
         offset=-fn.cat(
             fn.masked_median(inputs["state/x"], data_valid),

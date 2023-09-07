@@ -94,6 +94,7 @@ def evaluate(
     )
 
     if not save:
+        print(str(pt_eval), str(tf_eval))
         return
 
     meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
@@ -125,6 +126,7 @@ def waypoint_evaluate(
     )
 
     if not save:
+        print("\n".join(str(m) for m in metrics))
         return
 
     data_dict = metric_data_list_to_dict(metrics)
