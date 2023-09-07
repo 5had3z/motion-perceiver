@@ -53,10 +53,13 @@ def _make_submission_proto() -> occupancy_flow_submission_pb2.ChallengeSubmissio
     """Makes a submission proto to store predictions for one shard."""
     submission = occupancy_flow_submission_pb2.ChallengeSubmission()
     submission.account_name = "bryce.ferenczi@monash.edu"
-    submission.unique_method_name = "MotionPerceiver+Flow"
+    submission.unique_method_name = "MotionPerceiver"
     submission.authors.extend(["Bryce Ferenczi", "Michael Burke", "Tom Drummond"])
     submission.description = (
-        "Scene is encoded into a latent space which can be updated and evolved"
+        "Latent state representation of the scene is learned. The future latent state "
+        "of the scene is predicted based on the current latent state. Latent state can "
+        "be contiuously updated with new information from the scene resulting in a "
+        "realtime streaming architecture."
     )
     submission.method_link = "https://github.com/5had3z/motion-perceiver"
     return submission
@@ -171,6 +174,10 @@ def _add_predictions_to_submission(
 
 
 def export_evaluation(pred_path: Path):
+    dev = tf.config.list_physical_devices("GPU")
+    if len(dev) > 0:
+        tf.config.experimental.set_memory_growth(dev[0], True)
+
     task_config = get_waymo_task_config()
     submission = _make_submission_proto()
     _add_predictions_to_submission(task_config, submission, pred_path)
