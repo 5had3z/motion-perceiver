@@ -331,5 +331,18 @@ def visual_attention(
         visualise_output_attention(model, dataloader, eval_config)
 
 
+@app.command()
+def get_params(path: Path):
+    """Print number of parameters in model"""
+    from konductor.models import get_model
+    from torch import nn
+
+    exp_cfg = get_experiment_cfg(path.parent, None, path.name)
+
+    model: nn.Module = get_model(exp_cfg)
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"# Learnable Parameters: {total_params}")
+
+
 if __name__ == "__main__":
     app()
