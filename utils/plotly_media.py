@@ -57,7 +57,11 @@ def init_exp(root_dir: str):
     return [e.name for e in EXPERIMENTS]
 
 
-@callback(Output("md-type", "options"), Input("md-experiment", "value"))
+@callback(
+    Output("md-type", "options"),
+    Output("md-type", "value"),
+    Input("md-experiment", "value"),
+)
 def get_available_media(experiment_name: str):
     """Fill out available options given the subfolders available"""
     if not experiment_name:
@@ -67,7 +71,7 @@ def get_available_media(experiment_name: str):
     video_files = exp.root.glob("**/*.webm")
     unique_folders = set(f.parent for f in video_files)
     rel_folders = list(str(f.relative_to(exp.root)) for f in unique_folders)
-    return rel_folders
+    return rel_folders, None
 
 
 def get_thumbnail(path: Path) -> np.ndarray:
