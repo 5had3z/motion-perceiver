@@ -52,7 +52,7 @@ def write_video_batch(
     roadmap_scale: float = 1.0,
 ) -> None:
     """Write batch of videos"""
-    mpool = mp.Pool(processes=mp.cpu_count() // 2)
+    mpool = mp.get_context("forkserver").Pool(processes=mp.cpu_count() // 2)
     bz = data["heatmap"].shape[0]
 
     occ_path = path / "occupancy"
