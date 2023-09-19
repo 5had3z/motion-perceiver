@@ -141,6 +141,15 @@ def pedestrian_pipe(
         data_out.append(data_vxvy)
     if "vel_yaw" in cfg.vehicle_features:
         data_out.append(data_vt)
+    if "class" in cfg.vehicle_features:
+        # Create class vector
+        data_class = fn.cast(inputs["type"], dtype=DALIDataType.FLOAT)
+        data_class = fn.stack(
+            *[data_class] * cfg.sequence_length if cfg.full_sequence else 1, axis=1
+        )
+        data_class = data_class[:, :, newaxis]
+        data_out.append(data_class)
+
     outputs = [fn.cat(*data_out, axis=2), inputs["valid"]]
 
     if cfg.time_stride > 1:

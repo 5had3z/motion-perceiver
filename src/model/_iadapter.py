@@ -225,6 +225,8 @@ class TrafficIA(InputAdapter):
     Waymo Open Motion Classes: [-1 Invalid, 0 Unset, 1 Vehicle, 2 Pedestrian, 3 Cyclist, 3 None]
     """
 
+    _N_ONEHOT = 3
+
     class ClassMode(enum.Enum):
         NONE = enum.auto()
         ONEHOT = enum.auto()
@@ -280,7 +282,7 @@ class TrafficIA(InputAdapter):
             num_input_channels += n_extra_features  # Append extra features
 
         if self.class_mode == TrafficIA.ClassMode.ONEHOT:
-            num_input_channels += 3  # number of onehot classes
+            num_input_channels += TrafficIA._N_ONEHOT
 
         if not heading_encoding:  # remove n_yaw_bands and add single channel
             num_input_channels += 1 - 2 * yaw_n_bands
@@ -292,6 +294,7 @@ class TrafficIA(InputAdapter):
         self.map_n_bands = map_n_bands
         self.heading_encoding = heading_encoding
         self.random_mask = random_mask
+        self.n_extra_features = n_extra_features
         super().__init__(num_input_channels)
 
     def apply_random_masking(self, x: Tensor, pad_mask: Tensor | None):
@@ -334,12 +337,16 @@ class TrafficIA(InputAdapter):
         )
 
         if self.input_mode == TrafficIA.InputMode.FPOS_EXTRA:
-            enc_x = torch.cat(
-                [enc_x, x[..., 3:8] if self.heading_encoding else x[..., 2:8]], dim=-1
-            )
+            start_ch = 3
+            end_ch = start_ch + self.n_extra_features
+            if not self.heading_encoding:
+                start_ch -= 1
+            enc_x = torch.cat([enc_x, x[..., start_ch:end_ch]], dim=-1)
 
         if self.class_mode == TrafficIA.ClassMode.ONEHOT:
-            onehot = torch.zeros([*enc_x.shape[0:2], 6], device=enc_x.device)
+            # 3 extrea -> [-1:invalid, 0:unknown, ..., 4:none]
+            n_onehot = TrafficIA._N_ONEHOT + 3
+            onehot = torch.zeros([*enc_x.shape[0:2], n_onehot], device=enc_x.device)
             onehot.scatter_(
                 2, x[..., [-1]].to(torch.int64) + 1, torch.ones_like(x[..., [-1]])
             )

@@ -14,7 +14,7 @@ from .pedestrain_pipe import pedestrian_pipe
 
 # fmt: off
 _ALL_FEATURES =  [
-    "x", "y","bbox_yaw",
+    "x", "y", "bbox_yaw",
     "velocity_x", "velocity_y",
     "vel_yaw", "class",
 ]
