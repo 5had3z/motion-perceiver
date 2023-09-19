@@ -42,8 +42,7 @@ def get_id_path(split: str):
 
 @app.command()
 def generate(
-    workspace: Path,
-    run_hash: str,
+    run_path: Path,
     split: Annotated[Mode, typer.Option()],
     workers: Annotated[int, typer.Option()] = 4,
     batch_size: Annotated[int, typer.Option()] = 16,
@@ -51,20 +50,21 @@ def generate(
     """
     Export pytorch predictions to folder of numpy files
     """
-    from konductor.trainer.init import get_experiment_cfg
+    from konductor.trainer.init import get_experiment_cfg, get_dataloader
     from utils.eval_common import initialize
     from utils.export_torch import run_export
 
-    exp_cfg = get_experiment_cfg(workspace, None, run_hash)
+    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
     exp_cfg.set_workers(workers)
     exp_cfg.set_batch_size(batch_size, split.name)
 
     with open(get_id_path(split.name), "r", encoding="utf-8") as f:
         scenario_ids = set([l.strip() for l in f.readlines()])
 
-    model, dataloader = initialize(exp_cfg, split.name, eval_waypoints=True)
-    pred_path = workspace / run_hash / f"{split.name}_blobs"
-    gt_path = workspace / f"{split.name}_ground_truth"
+    model, dataset = initialize(exp_cfg, eval_waypoints=True)
+    dataloader = get_dataloader(dataset, split)
+    pred_path = run_path / f"{split.name}_blobs"
+    gt_path = run_path.parent / f"{split.name}_ground_truth"
 
     pred_path.mkdir(exist_ok=True)
     gt_path.mkdir(exist_ok=True)
@@ -74,8 +74,7 @@ def generate(
 
 @app.command()
 def evaluate(
-    workspace: Path,
-    run_hash: str,
+    run_path: Path,
     split: Annotated[Mode, typer.Option()],
     visualize: Annotated[bool, typer.Option()] = False,
     save: Annotated[bool, typer.Option(help="Save result to db")] = True,
@@ -88,7 +87,7 @@ def evaluate(
 
     eval_fn = partial(_get_validation_and_prediction, visualize=visualize)
 
-    pred_path = workspace / run_hash / f"{split}_blobs"
+    pred_path = run_path / f"{split}_blobs"
     pt_eval, tf_eval = evaluate_methods(
         get_id_path(split.name), pred_path, split, eval_fn
     )
@@ -97,18 +96,17 @@ def evaluate(
         print(str(pt_eval), str(tf_eval))
         return
 
-    meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
-    with closing(get_db(workspace)) as con:
+    meta = Metadata.from_yaml(run_path / "metadata.yaml")
+    with closing(get_db(run_path.parent)) as con:
         cur = con.cursor()
-        upsert_eval(cur, run_hash, meta.epoch, pt_eval)
-        upsert_eval(cur, run_hash, meta.epoch, tf_eval)
+        upsert_eval(cur, run_path.name, meta.epoch, pt_eval)
+        upsert_eval(cur, run_path.name, meta.epoch, tf_eval)
         con.commit()
 
 
 @app.command()
 def waypoint_evaluate(
-    workspace: Path,
-    run_hash: str,
+    run_path: Path,
     split: Annotated[Mode, typer.Option()],
     save: Annotated[bool, typer.Option(help="Save result to db")] = True,
 ):
@@ -120,7 +118,7 @@ def waypoint_evaluate(
         upsert_waypoints,
     )
 
-    pred_path = workspace / run_hash / f"{split}_blobs"
+    pred_path = run_path / f"{split}_blobs"
     metrics = evaluate_methods(
         get_id_path(split.name), pred_path, split, _evaluate_timepoints_and_mean
     )
@@ -130,13 +128,53 @@ def waypoint_evaluate(
         return
 
     data_dict = metric_data_list_to_dict(metrics)
-    meta = Metadata.from_yaml(workspace / run_hash / "metadata.yaml")
+    meta = Metadata.from_yaml(run_path / "metadata.yaml")
 
-    with closing(get_db(workspace)) as con:
+    with closing(get_db(run_path.parent)) as con:
         cur = con.cursor()
         create_waypoints_table(cur)
-        upsert_waypoints(cur, run_hash, meta, data_dict)
+        upsert_waypoints(cur, run_path.name, meta, data_dict)
         con.commit()
+
+
+@app.command()
+def torch_evaluate(
+    run_path: Path,
+    split: Annotated[Mode, typer.Option()] = Mode.val,
+    workers: Annotated[int, typer.Option()] = 4,
+    batch_size: Annotated[int, typer.Option()] = 16,
+):
+    """Run evaluation with pytorch code"""
+    from konductor.data import get_dataloader_config
+    from konductor.trainer.init import get_experiment_cfg
+    from utils.eval_common import initialize
+    from utils.export_torch import run_eval
+    from src.statistics import Occupancy
+
+    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg.set_workers(workers)
+    exp_cfg.set_batch_size(batch_size, split.name)
+
+    tmp_root = Path(".cache")
+    tmp_root.mkdir(exist_ok=True)
+    tmp_path = tmp_root / "eval_occupancy.parquet"
+
+    model, dataset = initialize(exp_cfg, eval_waypoints=True)
+    perf_logger = Occupancy(
+        time_idxs=dataset.heatmap_time, writepath=tmp_path, buffer_length=1000
+    )
+    dataloader_cfg = get_dataloader_config(dataset, split)
+    dataloader_cfg.drop_last = False
+    dataloader = dataloader_cfg.get_instance()
+
+    run_eval(model, dataloader, perf_logger)
+
+    final_data = perf_logger.data()
+
+    for k, v in final_data.items():
+        print(f"{k}: {v.mean()}")
+
+    tmp_path.unlink()  # clean up
 
 
 @app.command()
@@ -212,7 +250,7 @@ def auto_evaluate(
         try:
             print(emph(f"Running {run_hash}", Fore.BLUE))
             generate(workspace, run_hash, Mode.val)
-            waypoint_evaluate(workspace, run_hash, Mode.val)
+            waypoint_evaluate(workspace / run_hash, Mode.val)
             print(
                 emph(
                     f"Updated {idx+1}/{len(need_update)} Experiments"

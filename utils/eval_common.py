@@ -72,11 +72,10 @@ def load_model(exp_cfg: ExperimentInitConfig) -> MotionPerceiver:
 
 def initialize(
     exp_cfg: ExperimentInitConfig,
-    split: str,
     no_overrides: bool = False,
     eval_waypoints: bool = False,
-) -> Tuple[MotionPerceiver, DALIGenericIterator]:
-    """Initialise model and dataloader for prediction export"""
+) -> Tuple[MotionPerceiver, MotionDatasetConfig]:
+    """Initialise model and dataset for prediction export"""
 
     # Override occupancy roi for eval if necessary
     if exp_cfg.data[0].dataset.args.get("map_normalize", 0) == 80 and not no_overrides:
@@ -88,7 +87,7 @@ def initialize(
     model.encoder.random_input_indicies = 0
 
     if no_overrides:
-        return model, get_dataloader(data_cfg, split)
+        return model, data_cfg
 
     data_cfg.filter_future = True
     data_cfg.random_heatmap_count = 0
@@ -110,6 +109,6 @@ def initialize(
     elif isinstance(data_cfg, InteractionConfig):
         data_cfg.heatmap_time = list(range(40 // data_cfg.time_stride))
     elif isinstance(data_cfg, SDDDatasetConfig):
-        data_cfg.heatmap_time = list(range(77 // data_cfg.time_stride))
+        data_cfg.heatmap_time = [52, 76]
 
-    return model.eval(), get_dataloader(data_cfg, split)
+    return model.eval(), data_cfg
