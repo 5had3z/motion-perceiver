@@ -626,7 +626,8 @@ class MotionEncoder3CtxDetach(MotionEncoder3Ctx):
         min_idx = min(self.input_indicies)
         out_latent = []
 
-        if road is not None:
+        if self.roadgraph_encoder is not None:
+            assert road is not None
             enc_road, road_mask = self.encode_road(road, road_mask)
         else:
             enc_road = None
@@ -717,7 +718,8 @@ class MotionEncoder2Phase(MotionEncoder3Ctx):
         min_idx = min(self.input_indicies)
         out_latent = []
 
-        if road is not None:
+        if self.roadgraph_encoder is not None:
+            assert road is not None
             enc_road, road_mask = self.encode_road(road, road_mask)
         else:
             enc_road = None
@@ -1191,7 +1193,8 @@ class MotionEncoderODE(MotionEncoder3Ctx):
         min_idx = min(self.input_indicies)
         out_latent = []
 
-        if road is not None:
+        if self.roadgraph_encoder is not None:
+            assert road is not None
             enc_road, road_mask = self.encode_road(road, road_mask)
         else:
             enc_road = None

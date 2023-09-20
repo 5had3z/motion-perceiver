@@ -37,7 +37,6 @@ RUN cd /opt/konductor && pip3 install dist/$(ls dist/ | grep whl)
 
 # Install in dist-utils so not overwritten in /home/worker
 RUN pip3 install \
-    opencv-python-headless==4.7.0.68 \
     einops==0.6.0 \
     scipy==1.10.0 \ 
     paramiko==3.0.0 \
