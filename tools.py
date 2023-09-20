@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import torch
 import typer
-from konductor.data import DATASET_REGISTRY, ExperimentInitConfig, Mode
+from konductor.data import DATASET_REGISTRY, ExperimentInitConfig, Mode, get_dataloader
 from konductor.trainer.init import get_dataset_config, get_experiment_cfg
 from konductor.utilities.pbar import LivePbar
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
@@ -284,8 +284,8 @@ def make_video(
 
     exp_cfg.set_batch_size(batch_size, split.name)
 
-    data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
-    model, dataloader = initialize(exp_cfg, split)
+    model, data_cfg = initialize(exp_cfg)
+    dataloader = get_dataloader(data_cfg, split)
     # model.encoder.input_indicies = set(range(0, 91, 10))
 
     eval_config = EvalConfig(

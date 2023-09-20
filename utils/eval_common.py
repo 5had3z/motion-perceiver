@@ -109,6 +109,7 @@ def initialize(
     elif isinstance(data_cfg, InteractionConfig):
         data_cfg.heatmap_time = list(range(40 // data_cfg.time_stride))
     elif isinstance(data_cfg, SDDDatasetConfig):
-        data_cfg.heatmap_time = [52, 76]
+        # data_cfg.heatmap_time = [52, 76]
+        data_cfg.heatmap_time = list(range(data_cfg.sequence_length))
 
     return model.eval(), data_cfg
