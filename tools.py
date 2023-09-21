@@ -2,7 +2,7 @@
 
 """Overrides model and dataloader params to generate the full video"""
 import inspect
-import multiprocessing as mp
+import torch.multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
@@ -52,7 +52,7 @@ def write_video_batch(
     roadmap_scale: float = 1.0,
 ) -> None:
     """Write batch of videos"""
-    mpool = mp.get_context("forkserver").Pool(processes=mp.cpu_count() // 2)
+    mpool = mp.get_context("forkserver").Pool(processes=mp.cpu_count() * 3 // 4)
     bz = data["heatmap"].shape[0]
 
     occ_path = path / "occupancy"
@@ -97,16 +97,16 @@ def write_video_batch(
             zip(pred["flow"], pred["heatmap"], data["flow"])
         ):
             # Super slow here for some reason when threadding? Maybe use of torch inside?
-            # mpool.apply_async(
-            write_flow_video(
-                # kwds=dict(
-                pred_flow_sequence=p_flow.cpu().numpy(),
-                pred_occ_sequence=p_occ.sigmoid().cpu().numpy(),
-                truth_flow_sequence=t_flow.cpu().numpy(),
-                path=flow_path / f"{scenario_names[b_idx]}.webm",
-                mask_thresh=0.5,
-                timestamps=timestamps
-                # ),
+            mpool.apply_async(
+                write_flow_video,
+                kwds=dict(
+                    pred_flow_sequence=p_flow,
+                    pred_occ_sequence=p_occ.sigmoid(),
+                    truth_flow_sequence=t_flow,
+                    path=flow_path / f"{scenario_names[b_idx]}.webm",
+                    mask_thresh=0.5,
+                    timestamps=timestamps,
+                ),
             )
 
     mpool.close()

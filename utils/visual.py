@@ -192,9 +192,9 @@ def write_occupancy_video(
 
 
 def create_flow_frame(
-    pred_flow: np.ndarray,
-    pred_occ: np.ndarray,
-    truth_flow: np.ndarray,
+    pred_flow: Tensor,
+    pred_occ: Tensor,
+    truth_flow: Tensor,
     frame_size: Tuple[int, int],
     mask_thresh: float = 0.5,
 ) -> np.ndarray:
@@ -202,20 +202,23 @@ def create_flow_frame(
     mask out predicted flow with predicted occupancy over a threshold
     A threshold of zero is obviously no threshold (show all flow for every pixel)
     """
-    pred_flow_rgb = flow_to_image(torch.tensor(pred_flow)).numpy()
+    pred_flow_rgb = flow_to_image(pred_flow)
     pred_flow_rgb[:, pred_occ < mask_thresh] = 255  # set to white
-    truth_flow_rgb = flow_to_image(torch.tensor(truth_flow)).numpy()
+    truth_flow_rgb = flow_to_image(truth_flow)
     rgb_frame = cv2.hconcat(
-        [np.moveaxis(pred_flow_rgb, 0, 2), np.moveaxis(truth_flow_rgb, 0, 2)]
+        [
+            np.moveaxis(pred_flow_rgb.cpu().numpy(), 0, 2),
+            np.moveaxis(truth_flow_rgb.cpu().numpy(), 0, 2),
+        ]
     )
     rgb_frame = cv2.resize(rgb_frame, frame_size, interpolation=cv2.INTER_LINEAR)
     return rgb_frame
 
 
 def write_flow_video(
-    pred_flow_sequence: np.ndarray,
-    pred_occ_sequence: np.ndarray,
-    truth_flow_sequence: np.ndarray,
+    pred_flow_sequence: Tensor,
+    pred_occ_sequence: Tensor,
+    truth_flow_sequence: Tensor,
     timestamps: List[float],
     path: Path,
     mask_thresh: float = 0.5,
@@ -241,5 +244,13 @@ def write_flow_video(
         rgb_frame = apply_ts_text(timestamps[idx], rgb_frame, extra=f"pr>{mask_thresh}")
 
         v_writer.write(rgb_frame)
+
+    # Delete torch tensors https://pytorch.org/docs/stable/multiprocessing.html
+    del pred_flow_sequence, pred_occ_sequence, truth_flow_sequence
+    import gc
+
+    # Make sure they're gone
+    gc.collect()
+    torch.cuda.empty_cache()
 
     v_writer.release()
