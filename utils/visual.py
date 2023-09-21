@@ -197,6 +197,7 @@ def create_flow_frame(
     truth_flow: Tensor,
     frame_size: Tuple[int, int],
     mask_thresh: float = 0.5,
+    roadmap: Tensor | None = None,
 ) -> np.ndarray:
     """Create a side-by-side frame of predicted occupancy flow and ground truth,
     mask out predicted flow with predicted occupancy over a threshold
@@ -205,6 +206,14 @@ def create_flow_frame(
     pred_flow_rgb = flow_to_image(pred_flow)
     pred_flow_rgb[:, pred_occ < mask_thresh] = 255  # set to white
     truth_flow_rgb = flow_to_image(truth_flow)
+
+    if roadmap is not None:
+        if roadmap.ndim == 2:
+            apply_roadmap_to_frame(pred_flow_rgb, roadmap, mask_thresh)
+            apply_roadmap_to_frame(truth_flow_rgb, roadmap, mask_thresh)
+        else:
+            raise NotImplementedError()
+
     rgb_frame = cv2.hconcat(
         [
             np.moveaxis(pred_flow_rgb.cpu().numpy(), 0, 2),
@@ -222,6 +231,7 @@ def write_flow_video(
     timestamps: List[float],
     path: Path,
     mask_thresh: float = 0.5,
+    roadmap: Tensor | None = None,
 ):
     """"""
     video_shape = (1600, 800)
@@ -239,6 +249,7 @@ def write_flow_video(
             truth_flow_sequence[:, idx],
             video_shape,
             mask_thresh,
+            roadmap,
         )
 
         rgb_frame = apply_ts_text(timestamps[idx], rgb_frame, extra=f"pr>{mask_thresh}")
