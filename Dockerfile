@@ -9,7 +9,7 @@ RUN cmake -B build -S opencv-4.7.0 -G Ninja -DBUILD_LIST=imgproc && \
     cmake --build build --parallel
 
 # Copy Konductor from dev build
-FROM mu00120825.eng.monash.edu.au:5000/konductor:pytorch-main as konductor-dev
+FROM konductor:pytorch-main as konductor-dev
 FROM nvcr.io/nvidia/pytorch:23.08-py3
 
 # Install OpenCV from compile container
