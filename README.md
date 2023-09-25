@@ -15,7 +15,7 @@ This work introduces a novel and adaptable architecture designed for real-time o
 
 ## Inference Sample - [More Here](https://sites.google.com/monash.edu/motionperceiver)
 
-![TwoPhase](./media/sampe.gif "TwoPhase")
+![TwoPhase](./media/sample.gif "TwoPhase")
 
 ## General Notes
 
