@@ -10,26 +10,25 @@ services:
     entrypoint:
       [
         "python3",
-        "export_waymo.py",
-        "--run_hash",
-        "2a7955d9ff608f267ab7adbff689ab3d",
-        "--workspace",
-        "/ckpt",
+        "evaluate.py",
+        "evaluate",
+        "/ckpt/653ffb701d16be1bc0f1f1cac5e90fac",
         "--split",
-        "val",
-        "export"
+        "val"
       ]
+    environment:
+      - PRETRAINED_ROOT=/ckpt
     volumes:
       - type: bind
         source: ./
         target: /workspace
         read_only: false
       - type: bind
-        source: /path/to/checkpoint # replace
+        source: /path/to/checkpoints
         target: /ckpt
         read_only: false
       - type: bind
-        source: /path/to/motion # replace
+        source: /path/to/datasets
         target: /data
         read_only: false
     deploy:

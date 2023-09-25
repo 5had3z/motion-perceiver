@@ -266,7 +266,7 @@ def override_dataset(exp_cfg: ExperimentInitConfig, new_dataset: str):
 
 @app.command()
 def make_video(
-    path: Path,
+    run_path: Path,
     split: Annotated[Mode, typer.Option()] = Mode.val,
     n_samples: Annotated[int, typer.Option()] = 16,
     workers: Annotated[int, typer.Option()] = 4,
@@ -275,7 +275,7 @@ def make_video(
     dataset: Annotated[Optional[str], typer.Option()] = None,
 ) -> None:
     """"""
-    exp_cfg = get_experiment_cfg(path.parent, None, path.name)
+    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
     exp_cfg.set_workers(workers)
 
     # Optional override dataset, filter out different kwargs
@@ -305,13 +305,13 @@ def make_video(
 
 @app.command()
 def visual_attention(
-    path: Path,
+    run_path: Path,
     workers: Annotated[int, typer.Option()] = 4,
     n_samples: Annotated[int, typer.Option()] = 16,
     batch_size: Annotated[int, typer.Option()] = 8,
     threshold: Annotated[float, typer.Option()] = 0.0,
 ):
-    exp_cfg = get_experiment_cfg(path.parent, None, path.name)
+    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
     exp_cfg.set_workers(workers)
     exp_cfg.set_batch_size(batch_size, "val")
 
@@ -332,12 +332,12 @@ def visual_attention(
 
 
 @app.command()
-def get_params(path: Path):
+def get_params(run_path: Path):
     """Print number of parameters in model"""
     from konductor.models import get_model
     from torch import nn
 
-    exp_cfg = get_experiment_cfg(path.parent, None, path.name)
+    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
 
     model: nn.Module = get_model(exp_cfg)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
