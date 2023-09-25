@@ -1,0 +1,66 @@
+checkpointer:
+  extra: 25
+  latest: 1
+  mode: epoch
+criterion:
+  - args:
+      alpha: 0.75
+    type: occupancy_focal
+dataset:
+  - args:
+      filter_future: true
+      full_sequence: true
+      heatmap_time: [0, 10]
+      map_normalize: 80.0
+      occupancy_roi: 0.5
+      occupancy_size: 256
+      only_vehicles: true
+      random_heatmap_count: 4
+      random_heatmap_minmax: [1, 60]
+      roadmap: false
+      signal_features: false
+      use_sdc_frame: true
+      waymo_eval_frame: true
+    loader:
+      args:
+        batch_size: 56
+        drop_last: true
+      type: DALI
+    type: waymo_motion
+logger:
+  interval: 500
+  write_tboard:
+    - all
+model:
+  - args:
+      decoder:
+        adapter:
+          args:
+            num_output_channels: 128
+          type: heatmap
+        num_frequency_bands: 32
+        position_encoding_type: fourier
+        residule_query: false
+      encoder:
+        adapter:
+          args:
+            input_mode: fpos_extra
+            map_n_bands: 64
+            yaw_n_bands: 64
+          type: vehicle
+        detach_latent: true
+        input_indicies: [0, 5, 10]
+        num_latent_channels: 256
+        num_latents: 128
+        version: 7
+    optimizer:
+      args:
+        lr: 0.001
+        step_interval: 1
+      scheduler:
+        args:
+          max_iter: 50
+          power: 0.9
+        type: poly
+      type: AdamW
+    type: motion-perceiver
