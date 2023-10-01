@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from argparse import Namespace as NS
 import logging
 from typing import Tuple, Dict, List, Type
 from functools import partial
@@ -8,9 +7,17 @@ from functools import partial
 import torch
 from torch import Tensor
 from torch.profiler import record_function
+from konductor.metadata.statistics.perflogger import PerfLogger
+from konductor.metadata.statistics.pq_writer import ParquetLogger
 from konductor.utilities import comm
 from konductor.utilities.pbar import pbar_wrapper, PbarType
-from konductor.trainer.init import get_training_parser, init_training, cli_init_config
+from konductor.trainer.init import (
+    get_training_parser,
+    get_dataset_config,
+    init_training_modules,
+    init_data_manager,
+    cli_init_config,
+)
 from konductor.trainer.pytorch import (
     PyTorchTrainer,
     PyTorchTrainerModules,
@@ -70,24 +77,33 @@ class Trainer(PyTorchTrainer):
 
 def setup(cli_args: NS) -> Trainer:
     exp_config = cli_init_config(cli_args)
+
+    trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
     if cli_args.pbar:
-        exp_config.trainer_kwargs["pbar"] = pbar_wrapper
+        trainer_config.pbar = pbar_wrapper
     else:
-        exp_config.trainer_kwargs["pbar"] = partial(
+        trainer_config.pbar = partial(
             pbar_wrapper, pbar_type=PbarType.INTERVAL, fraction=0.1
         )
 
-    trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
+    train_modules = PyTorchTrainerModules.from_config(exp_config)
 
-    statistics: Dict[str, Type[Statistic]] = {"occupancy": src.statistics.Occupancy}
+    dataset_props = get_dataset_config(exp_config).properties
+    statistics: Dict[str, Statistic] = {
+        "occupancy": src.statistics.Occupancy.from_config(**dataset_props)
+    }
     if exp_config.model[0].args.get("signal_decoder", False):
-        statistics["signal-forecast"] = src.statistics.Signal
+        statistics["signal-forecast"] = src.statistics.Signal.from_config(
+            **dataset_props
+        )
     if exp_config.data[0].dataset.args.get("flow_mask", False):
-        statistics["flow-predict"] = src.statistics.Flow
+        statistics["flow-predict"] = src.statistics.Flow.from_config(**dataset_props)
 
-    return init_training(
-        exp_config, Trainer, trainer_config, statistics, PyTorchTrainerModules
-    )
+    log_writer = ParquetLogger(exp_config.work_dir)
+
+    data_manager = init_data_manager(exp_config, train_modules, statistics, log_writer)
+
+    return Trainer(trainer_config, train_modules, data_manager)
 
 
 def main() -> None:

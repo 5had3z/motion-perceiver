@@ -1,37 +1,31 @@
 """Export pytorch predictions to numpy file
 to then import to waymo"""
 
-from contextlib import closing
-import enum
 import os
+import time
+from contextlib import closing
 from pathlib import Path
 from shutil import rmtree
-import time
-from typing_extensions import Annotated
 
 import typer
 from colorama import Fore, Style
+from konductor.init import Split
+from typing_extensions import Annotated
 
 from utils.eval_data import (
-    upsert_eval,
-    get_db,
-    upsert_metadata,
     Metadata,
     find_outdated_runs,
+    get_db,
+    upsert_eval,
+    upsert_metadata,
 )
-
-
-class Mode(str, enum.Enum):
-    train = "train"
-    val = "val"
-    test = "test"
-
 
 app = typer.Typer()
 
 
-def get_id_path(split: str):
-    ext_split = {"test": "testing", "val": "validation"}[split]
+def get_id_path(split: Split):
+    """Get path to ID subset file of split"""
+    ext_split = {Split.TEST: "testing", Split.VAL: "validation"}[split]
     return (
         Path(os.environ.get("DATAPATH", "/data"))
         / "waymo-motion"
@@ -43,28 +37,32 @@ def get_id_path(split: str):
 @app.command()
 def generate(
     run_path: Path,
-    split: Annotated[Mode, typer.Option()],
+    split: Annotated[Split, typer.Option()],
     workers: Annotated[int, typer.Option()] = 4,
     batch_size: Annotated[int, typer.Option()] = 16,
 ):
     """
     Export pytorch predictions to folder of numpy files
     """
-    from konductor.trainer.init import get_experiment_cfg, get_dataloader
+    from konductor.data import get_dataloader
+    from konductor.trainer.init import get_experiment_cfg
+
     from utils.eval_common import initialize
     from utils.export_torch import run_export
 
     exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
     exp_cfg.set_workers(workers)
-    exp_cfg.set_batch_size(batch_size, split.name)
+    exp_cfg.set_batch_size(batch_size, split)
 
-    with open(get_id_path(split.name), "r", encoding="utf-8") as f:
-        scenario_ids = set([l.strip() for l in f.readlines()])
+    with open(get_id_path(split), "r", encoding="utf-8") as f:
+        scenario_ids = {l.strip() for l in f.readlines()}
 
     model, dataset = initialize(exp_cfg, eval_waypoints=True)
     dataloader = get_dataloader(dataset, split)
-    pred_path = run_path / f"{split.name}_blobs"
-    gt_path = run_path.parent / f"{split.name}_ground_truth"
+
+    split_name = split.name.lower()
+    pred_path = run_path / f"{split_name}_blobs"
+    gt_path = run_path.parent / f"{split_name}_ground_truth"
 
     pred_path.mkdir(exist_ok=True)
     gt_path.mkdir(exist_ok=True)
@@ -75,22 +73,21 @@ def generate(
 @app.command()
 def evaluate(
     run_path: Path,
-    split: Annotated[Mode, typer.Option()],
+    split: Annotated[Split, typer.Option()],
     visualize: Annotated[bool, typer.Option()] = False,
     save: Annotated[bool, typer.Option(help="Save result to db")] = True,
 ):
     """
     Use waymo evaluation code for calculating IOU/AUC requires exported pytorch predictions
     """
-    from utils.export_tf import evaluate_methods, _get_validation_and_prediction
     from functools import partial
+
+    from utils.export_tf import _get_validation_and_prediction, evaluate_methods
 
     eval_fn = partial(_get_validation_and_prediction, visualize=visualize)
 
-    pred_path = run_path / f"{split}_blobs"
-    pt_eval, tf_eval = evaluate_methods(
-        get_id_path(split.name), pred_path, split, eval_fn
-    )
+    pred_path = run_path / f"{split.name.lower()}_blobs"
+    pt_eval, tf_eval = evaluate_methods(get_id_path(split), pred_path, split, eval_fn)
 
     if not save:
         print(str(pt_eval), str(tf_eval))
@@ -107,20 +104,20 @@ def evaluate(
 @app.command()
 def waypoint_evaluate(
     run_path: Path,
-    split: Annotated[Mode, typer.Option()],
+    split: Annotated[Split, typer.Option()],
     save: Annotated[bool, typer.Option(help="Save result to db")] = True,
 ):
     """Evaluate waymo motion and collect waypoint accuarcy as well as mean"""
-    from utils.export_tf import evaluate_methods, _evaluate_timepoints_and_mean
     from utils.eval_data import (
         create_waypoints_table,
         metric_data_list_to_dict,
         upsert_waypoints,
     )
+    from utils.export_tf import _evaluate_timepoints_and_mean, evaluate_methods
 
     pred_path = run_path / f"{split}_blobs"
     metrics = evaluate_methods(
-        get_id_path(split.name), pred_path, split, _evaluate_timepoints_and_mean
+        get_id_path(split), pred_path, split, _evaluate_timepoints_and_mean
     )
 
     if not save:
@@ -140,29 +137,30 @@ def waypoint_evaluate(
 @app.command()
 def torch_evaluate(
     run_path: Path,
-    split: Annotated[Mode, typer.Option()] = Mode.val,
+    split: Annotated[Split, typer.Option()] = Split.VAL,
     workers: Annotated[int, typer.Option()] = 4,
     batch_size: Annotated[int, typer.Option()] = 16,
 ):
     """Run evaluation with pytorch code"""
     from konductor.data import get_dataloader_config
+    from konductor.metadata.statistics.pq_writer import _ParquetWriter
     from konductor.trainer.init import get_experiment_cfg
+
+    from src.statistics import Occupancy
     from utils.eval_common import initialize
     from utils.export_torch import run_eval
-    from src.statistics import Occupancy
 
     exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
     exp_cfg.set_workers(workers)
-    exp_cfg.set_batch_size(batch_size, split.name)
+    exp_cfg.set_batch_size(batch_size, split)
 
     tmp_root = Path(".cache")
     tmp_root.mkdir(exist_ok=True)
-    tmp_path = tmp_root / "eval_occupancy.parquet"
+    writer = _ParquetWriter(tmp_root, "eval_occupancy")
 
     model, dataset = initialize(exp_cfg, eval_waypoints=True)
-    perf_logger = Occupancy(
-        time_idxs=dataset.heatmap_time, writepath=tmp_path, buffer_length=1000
-    )
+
+    perf_logger = {Occupancy(time_idxs=dataset.heatmap_time)}
     dataloader_cfg = get_dataloader_config(dataset, split)
     dataloader_cfg.drop_last = False
     dataloader = dataloader_cfg.get_instance()
@@ -174,7 +172,7 @@ def torch_evaluate(
     for k, v in final_data.items():
         print(f"{k}: {v.mean()}")
 
-    tmp_path.unlink()  # clean up
+    writer.unlink()  # clean up
 
 
 @app.command()

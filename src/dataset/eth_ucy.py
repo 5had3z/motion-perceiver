@@ -6,7 +6,7 @@ from dataclasses import dataclass, asdict, field
 
 from typing import Any, Dict, List, Tuple
 
-from konductor.data import DATASET_REGISTRY, Mode
+from konductor.data import DATASET_REGISTRY, Split
 from nvidia.dali import Pipeline
 
 try:
@@ -39,10 +39,10 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
+    def get_instance(self, mode: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
         tfrecords = (
             [s for s in SUBSETS if s != self.withheld]
-            if mode == Mode.train
+            if mode == Split.TRAIN
             else [self.withheld]
         )
         tfrecords = [t + ".tfrecord" for t in tfrecords]

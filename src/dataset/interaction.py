@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
-from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
+from konductor.data import DATASET_REGISTRY, Split, ModuleInitConfig
 from nvidia.dali import Pipeline, fn, newaxis, pipeline_def
 from nvidia.dali.types import Constant, DALIDataType
 
@@ -49,8 +49,8 @@ class InteractionConfig(MotionDatasetConfig):
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        tfrec_file = self.basepath / f"interaction_{mode.name}.tfrecord"
+    def get_instance(self, split: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
+        tfrec_file = self.basepath / f"interaction_{split.name.lower()}.tfrecord"
 
         output_map = ["agents", "agents_valid"]
         if self.roadmap:

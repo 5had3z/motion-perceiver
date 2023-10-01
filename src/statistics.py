@@ -3,14 +3,13 @@ General AP Statistics for Occupancy Heatmap
 """
 from dataclasses import dataclass
 from pathlib import Path
-from itertools import product
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
 from torch import Tensor
 from torch.nn.functional import l1_loss, mse_loss
-from konductor.metadata.statistics import Statistic, STATISTICS_REGISTRY
+from konductor.metadata.statistics import Statistic
 
 
 @dataclass
@@ -58,23 +57,17 @@ def get_time_idxs(kwargs: Dict[str, Any]) -> List[int]:
     return sorted(time_idxs)
 
 
-@STATISTICS_REGISTRY.register_module("occupancy")
 class Occupancy(Statistic):
     """Soft IoU and AUC for Occupancy"""
 
-    sort_lambda = {"AUC": max, "IoU": max}
-
     @classmethod
-    def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
+    def from_config(cls, **kwargs):
         time_idxs = get_time_idxs(kwargs)
         return cls(
             auc_threholds=kwargs.get("auc_thresholds", 100),
             time_idxs=time_idxs if len(time_idxs) > 0 else None,
             classes=kwargs.get("classes", None),
             time_stride=kwargs.get("time_stride", 1),
-            buffer_length=buffer_length,
-            writepath=writepath,
-            reduce_batch=True,
         )
 
     def __init__(
@@ -83,28 +76,11 @@ class Occupancy(Statistic):
         time_idxs: List[int] | None = None,
         classes: List[str] | None = None,
         time_stride: int = 1,
-        **kwargs,
     ):
-        super().__init__(logger_name="OccupancyEval", **kwargs)
         self.auc_thresholds = auc_thresholds
         self.time_idxs = time_idxs
         self.time_stride = time_stride
         self.classes = classes
-
-        # Create statistic keys
-        data_keys = ["IoU", "AUC"]
-        if time_idxs is not None:  # Statistic_Time
-            data_keys = [
-                f"{s}_{t * time_stride}" for s, t in product(data_keys, time_idxs)
-            ]
-        if classes is not None:  # Class_Statistic
-            data_keys = [f"{c}_{s}" for c, s in product(classes, data_keys)]
-
-        # Add Statistic Keys and dummy buffer
-        for key in data_keys:
-            self._statistics[key] = np.empty(self._buffer_length)
-
-        self.reset()
 
     def calculate_soft_iou(self, pred: Tensor, target: Tensor) -> np.ndarray:
         """Calculates heatmap iou"""
@@ -177,51 +153,59 @@ class Occupancy(Statistic):
 
     def run_over_timesteps(
         self, prediction: Tensor, target: Tensor, timesteps: Tensor, classname: str = ""
-    ) -> None:
+    ) -> Dict[str, float]:
         """Currently assume the same timesteps across batches"""
+        result: Dict[str, float] = {}
         for tidx, timestep in enumerate(timesteps[0]):
             timestep *= self.time_stride
             iou = self.calculate_soft_iou(prediction[:, tidx], target[:, tidx])
-            self._append_sample(f"{classname}IoU_{timestep}", iou.mean())
+            result[f"{classname}IoU_{timestep}"] = iou.mean()
 
             auc = self.calculate_auc(prediction[:, tidx], target[:, tidx])
-            self._append_sample(f"{classname}AUC_{timestep}", auc.mean())
+            result[f"{classname}AUC_{timestep}"] = auc.mean()
+
+        return result
 
     def run_over_classes(
         self, prediction: Tensor, target: Tensor, timesteps: Tensor, classname: str = ""
-    ) -> None:
+    ) -> Dict[str, float]:
         """Run class over timestep(s)"""
         prediction = prediction.sigmoid()
 
         if self.time_idxs is None:
+            result: Dict[str, float] = {}
+
             # squeeze channel dim on prediction if required
             prediction = prediction.squeeze(1)
             target = target.squeeze(1)
 
             iou = self.calculate_soft_iou(prediction, target)
-            self._append_sample(f"{classname}IoU", iou.mean())
+            result[f"{classname}IoU"] = iou.mean()
 
             auc = self.calculate_auc(prediction, target)
-            self._append_sample(f"{classname}AUC", auc.mean())
+            result[f"{classname}AUC"] = auc.mean()
         else:
-            self.run_over_timesteps(prediction, target, timesteps, classname)
+            result = self.run_over_timesteps(prediction, target, timesteps, classname)
+
+        return result
 
     def __call__(
-        self, it: int, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
-    ) -> None:
+        self, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
+    ) -> Dict[str, float]:
         """"""
-        super().__call__(it)
+        result = {}
         for idx_, name in enumerate(p for p in predictions if "heatmap" in p):
             prediction = predictions[name]
             target = targets["heatmap"][:, idx_]
             prefix = f"{name}_" if name != "heatmap" else ""
-            self.run_over_classes(prediction, target, targets["time_idx"], prefix)
+            result.update(
+                self.run_over_classes(prediction, target, targets["time_idx"], prefix)
+            )
+        return result
 
 
 class Signal(Statistic):
     """Tracking signal prediction performance"""
-
-    sort_lambda = {"AUC": max, "IoU": max}
 
     @classmethod
     def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
@@ -253,10 +237,9 @@ class Signal(Statistic):
         return targets[:, timestamps, :, -1], mask[:, timestamps]
 
     def __call__(
-        self, it: int, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
+        self, predictions: Dict[str, Tensor], targets: Dict[str, Tensor]
     ) -> None:
         """"""
-        super().__call__(it)
         target_signal, valid_signal = self.get_targets(
             targets["signals"], targets["signals_valid"], targets["time_idx"][0]
         )
@@ -269,8 +252,6 @@ class Signal(Statistic):
 
 
 class Flow(Statistic):
-    sort_lambda = {"mse": min, "l1": min}
-
     @classmethod
     def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
         return cls(
