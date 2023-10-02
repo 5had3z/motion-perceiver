@@ -34,9 +34,9 @@ std::size_t LoadScene<dali::CPUBackend>::findLargestFilesize() const noexcept
         return fs::file_size(filePath);
     };
     auto fileSizes = mMapInfo | rv::keys | rv::transform(getFileSize) | rv::common;
-    auto maxFile = std::ranges::max_element(fileSizes.begin(), fileSizes.end());
+    auto maxFileSize = *std::ranges::max_element(fileSizes);
 
-    return *maxFile;
+    return maxFileSize;
 }
 
 template <>

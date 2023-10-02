@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.21.3 FATAL_ERROR)
 
-find_package(OpenCV REQUIRED COMPONENTS imgproc)
-
 CPMAddPackage(
     GIT_TAG 0.8.0
     GITHUB_REPOSITORY jbeder/yaml-cpp
@@ -20,6 +18,6 @@ target_compile_options(
 
 target_link_directories(scene_loader PRIVATE ${DALI_LIB_DIR})
 
-target_include_directories(scene_loader PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_include_directories(scene_loader PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR})
 
-target_link_libraries(scene_loader dali yaml-cpp ${OpenCV_LIBS})
+target_link_libraries(scene_loader dali yaml-cpp)
