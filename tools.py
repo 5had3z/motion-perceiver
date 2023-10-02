@@ -2,17 +2,23 @@
 
 """Overrides model and dataloader params to generate the full video"""
 import inspect
-import torch.multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
 import torch
+import torch.multiprocessing as mp
 import typer
-from konductor.data import DATASET_REGISTRY, ExperimentInitConfig, Mode, get_dataloader
-from konductor.trainer.init import get_dataset_config, get_experiment_cfg
+from konductor.data import (
+    DATASET_REGISTRY,
+    ExperimentInitConfig,
+    Split,
+    get_dataloader,
+    get_dataset_config,
+)
+from konductor.trainer.init import get_experiment_cfg
 from konductor.utilities.pbar import LivePbar
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from torch import Tensor
@@ -137,11 +143,9 @@ def reduce_gt_frames(
 
 
 def generate_videos(
-    model: MotionPerceiver,
-    loader: DALIGenericIterator,
-    config: EvalConfig,
-) -> None:
-    """"""
+    model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig
+):
+    """Create Videos of Inference"""
     with LivePbar(total=config.n_videos // config.batch_size) as pbar:
         for data in loader:
             n_samples = pbar.n * config.batch_size
@@ -267,7 +271,7 @@ def override_dataset(exp_cfg: ExperimentInitConfig, new_dataset: str):
 @app.command()
 def make_video(
     run_path: Path,
-    split: Annotated[Mode, typer.Option()] = Mode.val,
+    split: Annotated[Split, typer.Option()] = Split.VAL,
     n_samples: Annotated[int, typer.Option()] = 16,
     workers: Annotated[int, typer.Option()] = 4,
     batch_size: Annotated[int, typer.Option()] = 8,
@@ -282,14 +286,14 @@ def make_video(
     if dataset is not None:
         override_dataset(exp_cfg, dataset)
 
-    exp_cfg.set_batch_size(batch_size, split.name)
+    exp_cfg.set_batch_size(batch_size, split)
 
     model, data_cfg = initialize(exp_cfg)
     dataloader = get_dataloader(data_cfg, split)
     # model.encoder.input_indicies = set(range(0, 91, 10))
 
     eval_config = EvalConfig(
-        exp_cfg.work_dir / exp_cfg.data[0].dataset.type / str(split.name),
+        exp_cfg.work_dir / exp_cfg.data[0].dataset.type / str(split.name.lower()),
         batch_size,
         n_samples,
         threshold,

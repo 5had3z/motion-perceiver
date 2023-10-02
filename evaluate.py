@@ -143,7 +143,7 @@ def torch_evaluate(
 ):
     """Run evaluation with pytorch code"""
     from konductor.data import get_dataloader_config
-    from konductor.metadata.statistics.pq_writer import _ParquetWriter
+    from konductor.metadata.loggers.pq_writer import _ParquetWriter
     from konductor.trainer.init import get_experiment_cfg
 
     from src.statistics import Occupancy
@@ -195,7 +195,7 @@ def update_metadata(workspace: Path):
 
 
 @app.command()
-def export(workspace: Path, run_hash: str, split: Annotated[Mode, typer.Option()]):
+def export(workspace: Path, run_hash: str, split: Annotated[Split, typer.Option()]):
     """Export predictions for waymo eval server"""
     from utils.export_tf import export_evaluation
 
@@ -205,12 +205,13 @@ def export(workspace: Path, run_hash: str, split: Annotated[Mode, typer.Option()
 @app.command()
 def clean(exp_path: Path):
     """Remove generated evaluation files from experiment"""
-    pred_gen = [f"{s.name}_blobs" for s in Mode]
+    pred_gen = [f"{s.name.lower()}_blobs" for s in Split]
     for item in pred_gen:
         target = exp_path / item
         if not target.exists():
             continue
-        elif target.is_dir():
+
+        if target.is_dir():
             rmtree(target)
         elif target.is_file():
             target.unlink()
@@ -219,9 +220,9 @@ def clean(exp_path: Path):
 @app.command()
 def clean_all(workspace: Path):
     """Remove generated evaluation files from all experiments"""
-    for f in workspace.iterdir():
-        if f.is_dir():
-            clean(f)
+    for item in workspace.iterdir():
+        if item.is_dir():
+            clean(item)
 
 
 @app.command()
@@ -238,7 +239,8 @@ def auto_evaluate(
     need_update = find_outdated_runs(workspace, "waypoints")
     print(f"{len(need_update)} experiments to update: {need_update}")
 
-    emph = lambda x, c: f"{c+Style.BRIGHT}{x}{Style.RESET_ALL}"
+    def emph(msg: str, color: Fore):
+        return f"{color+Style.BRIGHT}{msg}{Style.RESET_ALL}"
 
     stime = time.perf_counter()
     for idx, run_hash in enumerate(need_update):
@@ -247,8 +249,8 @@ def auto_evaluate(
             continue  # Skip experiment if marked no eval
         try:
             print(emph(f"Running {run_hash}", Fore.BLUE))
-            generate(workspace, run_hash, Mode.val)
-            waypoint_evaluate(workspace / run_hash, Mode.val)
+            generate(workspace, run_hash, Split.VAL)
+            waypoint_evaluate(workspace / run_hash, Split.VAL)
             print(
                 emph(
                     f"Updated {idx+1}/{len(need_update)} Experiments"

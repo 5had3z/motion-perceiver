@@ -265,9 +265,8 @@ def waymo_motion_pipe(
         data_wl /= cfg.map_normalize
 
         # x and y are within the ROI
-        data_valid *= fn.reshape(
-            (dmath.abs(data_xy[:, :, 0]) < 1) * (dmath.abs(data_xy[:, :, 1]) < 1),
-            shape=[128, -1],
+        data_valid *= (dmath.abs(data_xy[:, :, 0]) < 1) * (
+            dmath.abs(data_xy[:, :, 1]) < 1
         )
 
     # normalize angle bewteen [-1,1]

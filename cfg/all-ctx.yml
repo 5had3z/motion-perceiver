@@ -35,8 +35,6 @@ dataset:
       type: DALI
 logger:
   interval: 500
-  write_tboard:
-    - all
 model:
   - args:
       decoder:

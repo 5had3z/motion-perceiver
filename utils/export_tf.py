@@ -382,7 +382,7 @@ def evaluate_methods(
     if len(dev) > 0:
         tf.config.experimental.set_memory_growth(dev[0], True)
 
-    split_ = {"test": "testing", "val": "validation"}[split.name]
+    split_ = {"test": "testing", "val": "validation"}[split.name.lower()]
 
     task_config = get_waymo_task_config()
     data_shards = (

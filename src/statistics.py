@@ -2,14 +2,16 @@
 General AP Statistics for Occupancy Heatmap
 """
 from dataclasses import dataclass
-from pathlib import Path
+from itertools import product
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
+from konductor.data import get_dataset_properties
+from konductor.init import ExperimentInitConfig
+from konductor.metadata import Statistic
 from torch import Tensor
 from torch.nn.functional import l1_loss, mse_loss
-from konductor.metadata.statistics import Statistic
 
 
 @dataclass
@@ -28,6 +30,7 @@ class Confusion:
 
     @property
     def device(self):
+        """Device tensors are currently on"""
         return self.tp.device
 
 
@@ -61,14 +64,26 @@ class Occupancy(Statistic):
     """Soft IoU and AUC for Occupancy"""
 
     @classmethod
-    def from_config(cls, **kwargs):
-        time_idxs = get_time_idxs(kwargs)
+    def from_config(cls, cfg: ExperimentInitConfig, **extras):
+        props = get_dataset_properties(cfg)
+        time_idxs = get_time_idxs(props)
         return cls(
-            auc_threholds=kwargs.get("auc_thresholds", 100),
+            auc_thresholds=extras.get("auc_thresholds", 100),
             time_idxs=time_idxs if len(time_idxs) > 0 else None,
-            classes=kwargs.get("classes", None),
-            time_stride=kwargs.get("time_stride", 1),
+            classes=props.get("classes", None),
+            time_stride=props.get("time_stride", 1),
         )
+
+    def get_keys(self) -> List[str]:
+        """Keys are Class_Stat_Time if Class and Time are not None"""
+        keys = ["IoU", "AUC"]
+        if self.time_idxs is not None:
+            keys = [
+                f"{s}_{t * self.time_stride}" for s, t in product(keys, self.time_idxs)
+            ]
+        if self.classes is not None:
+            keys = [f"{c}_{s}" for c, s in product(self.classes, keys)]
+        return keys
 
     def __init__(
         self,
@@ -208,26 +223,15 @@ class Signal(Statistic):
     """Tracking signal prediction performance"""
 
     @classmethod
-    def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
-        return cls(
-            time_idxs=get_time_idxs(kwargs),
-            buffer_length=buffer_length,
-            writepath=writepath,
-            reduce_batch=True,
-        )
+    def from_config(cls, cfg: ExperimentInitConfig, **extras):
+        props = get_dataset_properties(cfg)
+        return cls(time_idxs=get_time_idxs(props))
 
-    def __init__(self, time_idxs: List[int], **kwargs) -> None:
-        super().__init__(logger_name="SignalEval", **kwargs)
+    def get_keys(self) -> List[str]:
+        return [f"Acc_{t}" for t in self.time_idxs]
+
+    def __init__(self, time_idxs: List[int]) -> None:
         self.time_idxs = time_idxs
-
-        # Create statistic keys
-        data_keys = [f"Acc_{t}" for t in time_idxs]
-
-        # Add Statistic Keys and dummy buffer
-        for key in data_keys:
-            self._statistics[key] = np.empty(self._buffer_length)
-
-        self.reset()
 
     @staticmethod
     def get_targets(
@@ -247,45 +251,35 @@ class Signal(Statistic):
         correct *= valid_signal.bool()  # Mask incorrect to false
         accuracy = correct.sum(dim=[0, 2]) / valid_signal.sum(dim=[0, 2])
 
+        ret: Dict[str, float] = {}
         for acc, tidx in zip(accuracy, targets["time_idx"][0]):
-            self._append_sample(f"Acc_{tidx.item()}", acc.item())
+            ret[f"Acc_{tidx.item()}"] = acc.item()
 
 
 class Flow(Statistic):
-    @classmethod
-    def from_config(cls, buffer_length: int, writepath: Path, **kwargs):
-        return cls(
-            time_idxs=get_time_idxs(kwargs),
-            buffer_length=buffer_length,
-            writepath=writepath,
-            reduce_batch=True,
-        )
+    _loss_fn = {"mse": mse_loss, "l1": l1_loss}
 
-    def __init__(self, time_idxs: List[int], **kwargs) -> None:
-        super().__init__(logger_name="FlowEval", **kwargs)
+    @classmethod
+    def from_config(cls, cfg: ExperimentInitConfig, **extras):
+        props = get_dataset_properties(cfg)
+        return cls(time_idxs=get_time_idxs(props))
+
+    def get_keys(self) -> List[str]:
+        return [f"{k}_{t}" for k, t in product(self._loss_fn.keys(), self.time_idxs)]
+
+    def __init__(self, time_idxs: List[int]) -> None:
         self.time_idxs = time_idxs
 
-        # Create statistic keys
-        data_keys = []
-        for key in Flow.sort_lambda:
-            data_keys.extend([f"{key}_{t}" for t in time_idxs])
-
-        # Add Statistic Keys and dummy buffer
-        for key in data_keys:
-            self._statistics[key] = np.empty(self._buffer_length)
-
-        self.reset()
-
-    def __call__(self, it: int, prd: Dict[str, Tensor], tgt: Dict[str, Tensor]) -> None:
+    def __call__(self, prd: Dict[str, Tensor], tgt: Dict[str, Tensor]):
         """"""
-        super().__call__(it)
-
-        fn = {"mse": mse_loss, "l1": l1_loss}
+        res: Dict[str, float] = {}
 
         mask_time = tgt["heatmap"].transpose(0, 2)
-        for key in Flow.sort_lambda:
-            perf = fn[key](prd["flow"], tgt["flow"], reduction="none") * tgt["heatmap"]
+        for key, loss_fn in self._loss_fn.items():
+            perf = loss_fn(prd["flow"], tgt["flow"], reduction="none") * tgt["heatmap"]
             perf_time = perf.transpose(0, 2)
             for acc, mask, tidx in zip(perf_time, mask_time, tgt["time_idx"][0]):
                 acc = acc.sum(dim=[0, 2, 3]) / mask.sum(dim=[0, 2, 3])
-                self._append_sample(f"{key}_{tidx.item()}", acc.mean().item())
+                res[f"{key}_{tidx.item()}"] = acc.mean().item()
+
+        return res

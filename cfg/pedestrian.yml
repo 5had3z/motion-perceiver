@@ -64,4 +64,3 @@ model:
           power: 0.9
 logger:
   interval: 500
-  write_tboard: [all]
