@@ -8,7 +8,7 @@ from nvidia.dali import pipeline_def, Pipeline, newaxis, fn
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
-from konductor.data import DATASET_REGISTRY, Mode, ModuleInitConfig
+from konductor.data import DATASET_REGISTRY, Split, ModuleInitConfig
 
 from .common import (
     get_tfrecord_cache,
@@ -51,11 +51,11 @@ class WaymoDatasetConfig(MotionDatasetConfig):
         if self.roadmap_size == 0:
             self.roadmap_size = self.occupancy_size
 
-    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
+    def get_instance(self, mode: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
         root = {
-            Mode.train: self.basepath / "training",
-            Mode.val: self.basepath / "validation",
-            Mode.test: self.basepath / "testing",
+            Split.TRAIN: self.basepath / "training",
+            Split.VAL: self.basepath / "validation",
+            Split.TEST: self.basepath / "testing",
         }[mode]
 
         output_map = ["agents", "agents_valid"]
@@ -265,9 +265,8 @@ def waymo_motion_pipe(
         data_wl /= cfg.map_normalize
 
         # x and y are within the ROI
-        data_valid *= fn.reshape(
-            (dmath.abs(data_xy[:, :, 0]) < 1) * (dmath.abs(data_xy[:, :, 1]) < 1),
-            shape=[128, -1],
+        data_valid *= (dmath.abs(data_xy[:, :, 0]) < 1) * (
+            dmath.abs(data_xy[:, :, 1]) < 1
         )
 
     # normalize angle bewteen [-1,1]

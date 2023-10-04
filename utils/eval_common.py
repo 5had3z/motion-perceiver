@@ -3,8 +3,7 @@ from typing import Dict, List, Tuple, Set
 
 import torch
 from torch import Tensor
-from nvidia.dali.plugin.pytorch import DALIGenericIterator
-from konductor.data import get_dataloader, get_dataset_config
+from konductor.data import get_dataset_config
 from konductor.models import get_model
 from konductor.init import ExperimentInitConfig
 

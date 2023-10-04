@@ -60,8 +60,7 @@ class MotionDatasetConfig(DatasetConfig):
 
     @property
     def properties(self) -> Dict[str, Any]:
-        props = asdict(self)
-        return props
+        return asdict(self)
 
     def __post_init__(self):
         if self.roadmap_size == 0:

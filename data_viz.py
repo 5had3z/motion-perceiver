@@ -7,7 +7,7 @@ from pathlib import Path
 import os
 
 from torch import Tensor, inference_mode
-from konductor.data import ModuleInitConfig, Mode, get_dataloader
+from konductor.data import ModuleInitConfig, Split, get_dataloader
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 from src.dataset.common import MotionDatasetConfig
@@ -77,7 +77,7 @@ def main():
         # velocity_norm=4.0,
         time_stride=2,
     )
-    dataloader: DALIGenericIterator = get_dataloader(datacfg, Mode.val)
+    dataloader: DALIGenericIterator = get_dataloader(datacfg, Split.VAL)
     run_viz(dataloader, datacfg)
     # du.velocity_distribution(dataloader, batch_size * 10)
 

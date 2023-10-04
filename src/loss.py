@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, Tuple
 
 import torch
-from konductor.losses import REGISTRY, ExperimentInitConfig, LossConfig
+from konductor.losses import REGISTRY, LossConfig
 from torch import Tensor, nn
 from torch.nn.functional import (
     binary_cross_entropy_with_logits,
@@ -35,14 +35,8 @@ class OccupancyBCE(nn.Module):
 class OccupancyLoss(LossConfig):
     pos_weight: float = 1.0
 
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return super().from_config(config, idx, names=["bce"])
-
     def get_instance(self) -> Any:
-        kwargs = asdict(self)
-        del kwargs["names"]
-        return OccupancyBCE(**kwargs)
+        return OccupancyBCE(**asdict(self))
 
 
 class OccupancyFocal(nn.Module):
@@ -92,14 +86,8 @@ class OccupancyFocalLoss(LossConfig):
     gamma: float = 0.25
     pos_weight: float = 1.0
 
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return super().from_config(config, idx, names=["focal"])
-
     def get_instance(self) -> Any:
-        kwargs = asdict(self)
-        del kwargs["names"]
-        return OccupancyFocal(**kwargs)
+        return OccupancyFocal(**asdict(self))
 
 
 class SignalCE(nn.CrossEntropyLoss):
@@ -135,14 +123,8 @@ class SignalCE(nn.CrossEntropyLoss):
 @dataclass
 @REGISTRY.register_module("signal_prediction")
 class SignalBCEConfig(LossConfig):
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return super().from_config(config, idx, names=["signal_bce"])
-
     def get_instance(self) -> Any:
-        kwargs = asdict(self)
-        del kwargs["names"]
-        return SignalCE(**kwargs)
+        return SignalCE(**asdict(self))
 
 
 class FlowLoss(nn.Module):
@@ -174,14 +156,8 @@ class FlowLossConfig(LossConfig):
     loss_type: str = "huber"
     only_occupied: bool = True
 
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig, idx: int):
-        return super().from_config(config, idx, names=["flow"])
-
     def get_instance(self) -> Any:
-        kwargs = asdict(self)
-        del kwargs["names"]
-        return FlowLoss(**kwargs)
+        return FlowLoss(**asdict(self))
 
 
 class ConservationLoss(nn.Module):
@@ -204,11 +180,5 @@ class ConservationLoss(nn.Module):
 @dataclass
 @REGISTRY.register_module("conservation")
 class ConservationConfig(LossConfig):
-    @classmethod
-    def from_config(cls, config: ExperimentInitConfig, idx: int, **kwargs):
-        return super().from_config(config, idx, names=["conservation"])
-
     def get_instance(self) -> Any:
-        kwargs = asdict(self)
-        del kwargs["names"]
-        return ConservationLoss(**kwargs)
+        return ConservationLoss(**asdict(self))

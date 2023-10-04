@@ -72,7 +72,7 @@ def run(model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig)
 
 @app.command()
 def main(
-    path: Path,
+    run_path: Path,
     batch_size: Annotated[int, typer.Option()] = 1,
     random: Annotated[bool, typer.Option()] = False,
     n_samples: Annotated[int, typer.Option()] = 16,
@@ -81,7 +81,7 @@ def main(
     random car's timesteps are added as future
     measurements so that we are essentially conditioning
     our prediction on the action taken by some agent"""
-    exp_cfg = get_experiment_cfg(path.parent, None, path.name)
+    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
     exp_cfg.set_workers(4)
     exp_cfg.set_batch_size(batch_size, "val")
 

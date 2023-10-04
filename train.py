@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 
-from argparse import Namespace as NS
 import logging
-from typing import Tuple, Dict, List, Type
 from functools import partial
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+from typing_extensions import Annotated
 
 import torch
+from konductor.metadata import Statistic
+from konductor.trainer.init import init_data_manager, get_experiment_cfg
+from konductor.trainer.pytorch import (
+    AsyncFiniteMonitor,
+    PyTorchTrainer,
+    PyTorchTrainerConfig,
+    PyTorchTrainerModules,
+)
+from konductor.utilities import comm
+from konductor.utilities.pbar import PbarType, pbar_wrapper
+import typer
 from torch import Tensor
 from torch.profiler import record_function
-from konductor.utilities import comm
-from konductor.utilities.pbar import pbar_wrapper, PbarType
-from konductor.trainer.init import get_training_parser, init_training, cli_init_config
-from konductor.trainer.pytorch import (
-    PyTorchTrainer,
-    PyTorchTrainerModules,
-    PyTorchTrainerConfig,
-    AsyncFiniteMonitor,
-)
-from konductor.metadata.statistics import Statistic
 
 import src  # Imports all components into framework
 
@@ -68,46 +70,62 @@ class Trainer(PyTorchTrainer):
         return losses, pred
 
 
-def setup(cli_args: NS) -> Trainer:
-    exp_config = cli_init_config(cli_args)
-    if cli_args.pbar:
-        exp_config.trainer_kwargs["pbar"] = pbar_wrapper
+app = typer.Typer()
+
+
+@app.command()
+def main(
+    workspace: Annotated[Path, typer.Option()],
+    epoch: Annotated[int, typer.Option()],
+    run_hash: Annotated[Optional[str], typer.Option()] = None,
+    config_file: Annotated[Optional[Path], typer.Option()] = None,
+    workers: Annotated[int, typer.Option()] = 4,
+    pbar: Annotated[bool, typer.Option()] = False,
+    brief: Annotated[Optional[str], typer.Option()] = None,
+) -> None:
+    """Main entrypoint to training model"""
+
+    # Setup Training Configuration
+    exp_config = get_experiment_cfg(workspace, config_file, run_hash)
+    exp_config.set_workers(workers)
+
+    # Initialize Training Modules
+    train_modules = PyTorchTrainerModules.from_config(exp_config)
+
+    # Setup Metadata Modules
+    statistics: Dict[str, Statistic] = {
+        "occupancy": src.statistics.Occupancy.from_config(exp_config)
+    }
+    if exp_config.model[0].args.get("signal_decoder", False):
+        statistics["signal-forecast"] = src.statistics.Signal.from_config(exp_config)
+    if exp_config.data[0].dataset.args.get("flow_mask", False):
+        statistics["flow-predict"] = src.statistics.Flow.from_config(exp_config)
+    data_manager = init_data_manager(exp_config, train_modules, statistics)
+    if brief is not None:
+        data_manager.metadata.brief = brief
+
+    # Setup Trainer Configuration
+    trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
+    if pbar:
+        trainer_config.pbar = partial(pbar_wrapper, pbar_type=PbarType.LIVE)
     else:
-        exp_config.trainer_kwargs["pbar"] = partial(
+        trainer_config.pbar = partial(
             pbar_wrapper, pbar_type=PbarType.INTERVAL, fraction=0.1
         )
 
-    trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
+    trainer = Trainer(trainer_config, train_modules, data_manager)
 
-    statistics: Dict[str, Type[Statistic]] = {"occupancy": src.statistics.Occupancy}
-    if exp_config.model[0].args.get("signal_decoder", False):
-        statistics["signal-forecast"] = src.statistics.Signal
-    if exp_config.data[0].dataset.args.get("flow_mask", False):
-        statistics["flow-predict"] = src.statistics.Flow
-
-    return init_training(
-        exp_config, Trainer, trainer_config, statistics, PyTorchTrainerModules
-    )
-
-
-def main() -> None:
-    cli_parser = get_training_parser()
-    cli_parser.add_argument("--pbar", action="store_true")
-    cli_args = cli_parser.parse_args()
-    torch.set_float32_matmul_precision("high")
-    trainer = setup(cli_args)
-    trainer.train(epoch=cli_args.epoch, iteration=cli_args.iteration)
-
-    # Stop async thread
+    trainer.train(epoch=epoch)
     if isinstance(trainer.loss_monitor, AsyncFiniteMonitor):
         trainer.loss_monitor.stop()
 
 
 if __name__ == "__main__":
     comm.initialize()
+    torch.set_float32_matmul_precision("high")
     logging.basicConfig(
         format=f"%(asctime)s-RANK:{comm.get_local_rank()}-%(levelname)s-%(name)s: %(message)s",
         level=logging.INFO,
         force=True,
     )
-    main()
+    app()

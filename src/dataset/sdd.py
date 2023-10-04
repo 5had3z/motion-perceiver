@@ -5,7 +5,7 @@ from math import ceil
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
-from konductor.data import DATASET_REGISTRY, Mode
+from konductor.data import DATASET_REGISTRY, Split
 from nvidia.dali import Pipeline
 import yaml
 
@@ -41,8 +41,8 @@ class SDDDatasetConfig(MotionDatasetConfig):
 
         return super().__post_init__()
 
-    def get_instance(self, mode: Mode, **kwargs) -> Tuple[Pipeline, List[str], str]:
-        tfrecords = [f"sdd_{mode.name}.tfrecord"]
+    def get_instance(self, split: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
+        tfrecords = [f"sdd_{split.name.lower()}.tfrecord"]
 
         output_map = ["agents", "agents_valid"]
         if self.roadmap:
@@ -53,6 +53,10 @@ class SDDDatasetConfig(MotionDatasetConfig):
             output_map.append("scenario_id")
 
         pipeline = pedestrian_pipe(
-            self.basepath, **kwargs, cfg=self, tfrecords=tfrecords, split=mode.name
+            self.basepath,
+            **kwargs,
+            cfg=self,
+            tfrecords=tfrecords,
+            split=split.name.lower(),
         )
-        return pipeline, output_map, mode.name, -1
+        return pipeline, output_map, split.name.lower(), -1

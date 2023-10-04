@@ -32,19 +32,17 @@ dataset:
       waymo_eval_frame: true
     train_loader:
       args:
-        batch_size: 48
+        batch_size: 8
         drop_last: true
       type: DALI
     type: waymo_motion
     val_loader:
       args:
-        batch_size: 96
+        batch_size: 16
         drop_last: true
       type: DALI
 logger:
   interval: 1000
-  write_tboard:
-    - all
 model:
   - args:
       decoder:
