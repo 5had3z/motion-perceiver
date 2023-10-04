@@ -165,3 +165,4 @@ dmypy.json
 checkpoints
 viz_data
 cfg
+slurm

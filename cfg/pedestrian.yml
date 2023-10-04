@@ -8,7 +8,7 @@ dataset:
       roadmap: true
       roadmap_size: 256
       heatmap_time: [0, 14]
-      random_heatmap_minmax: [1, 43]
+      random_heatmap_minmax: [0, 38]
       random_heatmap_count: 3
       occupancy_roi: 0.5
       time_stride: 2

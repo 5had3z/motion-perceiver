@@ -75,7 +75,7 @@ app = typer.Typer()
 
 @app.command()
 def main(
-    workspace: Path,
+    workspace: Annotated[Path, typer.Option()],
     epoch: Annotated[int, typer.Option()],
     run_hash: Annotated[Optional[str], typer.Option()] = None,
     config_file: Annotated[Optional[Path], typer.Option()] = None,
