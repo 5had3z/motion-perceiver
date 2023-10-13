@@ -12,6 +12,7 @@ from nvidia.dali import fn
 from nvidia.dali.data_node import DataNode
 from nvidia.dali.types import DALIDataType, Constant
 from konductor.data import DatasetConfig
+from konductor.data.dali import DaliLoaderConfig
 from konductor.utilities.comm import (
     get_local_rank,
     synchronize,
@@ -32,6 +33,10 @@ VALID_AUG = {"random_rotate"}
 
 @dataclass
 class MotionDatasetConfig(DatasetConfig):
+    # Motion datasets use DALI
+    train_loader: DaliLoaderConfig
+    val_loader: DaliLoaderConfig
+
     # These should be set by specific dataset
     max_agents: int = field(init=False)
     sequence_length: int = field(init=False)

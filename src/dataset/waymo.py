@@ -1,10 +1,10 @@
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import math
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
-from nvidia.dali import pipeline_def, Pipeline, newaxis, fn
+from nvidia.dali import pipeline_def, newaxis, fn
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
@@ -51,12 +51,12 @@ class WaymoDatasetConfig(MotionDatasetConfig):
         if self.roadmap_size == 0:
             self.roadmap_size = self.occupancy_size
 
-    def get_instance(self, mode: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
+    def get_instance(self, split: Split):
         root = {
             Split.TRAIN: self.basepath / "training",
             Split.VAL: self.basepath / "validation",
             Split.TEST: self.basepath / "testing",
-        }[mode]
+        }[split]
 
         output_map = ["agents", "agents_valid"]
         if self.signal_features:
@@ -72,8 +72,13 @@ class WaymoDatasetConfig(MotionDatasetConfig):
         if self.sdc_index:
             output_map.append("sdc_mask")
 
-        datapipe = waymo_motion_pipe(root, cfg=self, **kwargs)
-        return datapipe, output_map, root.stem, -1
+        pipe_kwargs = (
+            self.train_loader.pipe_kwargs()
+            if split is Split.TRAIN
+            else self.val_loader.pipe_kwargs()
+        )
+        datapipe = waymo_motion_pipe(root, cfg=self, **pipe_kwargs)
+        return self.train_loader.get_instance(datapipe, output_map, -1, root.stem)
 
 
 @pipeline_def
