@@ -3,11 +3,9 @@ Conglomoration of ETH and UCY pedestrain datasets into a set of tfrecords.
 """
 
 from dataclasses import dataclass, asdict, field
-
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 from konductor.data import DATASET_REGISTRY, Split
-from nvidia.dali import Pipeline
 
 try:
     from .common import MotionDatasetConfig
@@ -39,10 +37,10 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def get_instance(self, mode: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
+    def get_instance(self, split: Split):
         tfrecords = (
             [s for s in SUBSETS if s != self.withheld]
-            if mode == Split.TRAIN
+            if split is Split.TRAIN
             else [self.withheld]
         )
         tfrecords = [t + ".tfrecord" for t in tfrecords]
@@ -55,7 +53,12 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
         if self.scenario_id:
             output_map.append("scenario_id")
 
+        loader = self.train_loader if split is Split.TRAIN else self.val_loader
         pipeline = pedestrian_pipe(
-            self.basepath, **kwargs, cfg=self, tfrecords=tfrecords, split=mode.name
+            self.basepath,
+            cfg=self,
+            tfrecords=tfrecords,
+            split=split.name.lower(),
+            **loader.pipe_kwargs()
         )
-        return pipeline, output_map, mode.name, -1
+        return loader.get_instance(pipeline, output_map, reader_name=split.name.lower())

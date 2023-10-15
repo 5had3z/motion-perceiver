@@ -11,14 +11,8 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 import typer
-from konductor.data import (
-    DATASET_REGISTRY,
-    ExperimentInitConfig,
-    Split,
-    get_dataloader,
-    get_dataset_config,
-)
-from konductor.trainer.init import get_experiment_cfg
+from konductor.data import DATASET_REGISTRY, Split, get_dataset_config
+from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from torch import Tensor
@@ -27,7 +21,7 @@ from typing_extensions import Annotated
 from src.dataset.common import MotionDatasetConfig
 from src.model import MotionPerceiver
 from src.model.motion_perceiver import MotionEncoder2Phase
-from utils.eval_common import initialize, scenairo_id_tensor_2_str
+from utils.eval_common import initialize, scenairo_id_tensor_2_str, apply_eval_overrides
 from utils.visual import (
     reverse_image_transforms,
     write_flow_video,
@@ -279,7 +273,7 @@ def make_video(
     dataset: Annotated[Optional[str], typer.Option()] = None,
 ) -> None:
     """"""
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
     exp_cfg.set_workers(workers)
 
     # Optional override dataset, filter out different kwargs
@@ -289,7 +283,8 @@ def make_video(
     exp_cfg.set_batch_size(batch_size, split)
 
     model, data_cfg = initialize(exp_cfg)
-    dataloader = get_dataloader(data_cfg, split)
+
+    dataloader = data_cfg.get_instance(split)
     # model.encoder.input_indicies = set(range(0, 91, 10))
 
     eval_config = EvalConfig(
@@ -315,13 +310,16 @@ def visual_attention(
     batch_size: Annotated[int, typer.Option()] = 8,
     threshold: Annotated[float, typer.Option()] = 0.0,
 ):
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    """Visualise attention between query position and token index"""
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
     exp_cfg.set_workers(workers)
-    exp_cfg.set_batch_size(batch_size, "val")
+    exp_cfg.set_batch_size(batch_size, Split.VAL)
 
     data_cfg: MotionDatasetConfig = get_dataset_config(exp_cfg)
 
-    model, dataloader = initialize(exp_cfg, "val")
+    model, dataset_config = initialize(exp_cfg)
+    apply_eval_overrides(dataset_config)
+    dataloader = dataset_config.get_instance(Split.VAL)
 
     eval_config = EvalConfig(
         exp_cfg.work_dir / exp_cfg.data[0].dataset.type,
@@ -341,7 +339,7 @@ def get_params(run_path: Path):
     from konductor.models import get_model
     from torch import nn
 
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
 
     model: nn.Module = get_model(exp_cfg)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

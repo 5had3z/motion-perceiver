@@ -8,8 +8,8 @@ import typer
 import torch
 from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
-from konductor.data import get_dataloader, get_dataset_config
-from konductor.trainer.init import get_experiment_cfg
+from konductor.data import get_dataset_config, Split
+from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar
 
 from src.model import MotionPerceiver
@@ -81,9 +81,10 @@ def main(
     random car's timesteps are added as future
     measurements so that we are essentially conditioning
     our prediction on the action taken by some agent"""
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
     exp_cfg.set_workers(4)
-    exp_cfg.set_batch_size(batch_size, "val")
+    split = Split.VAL
+    exp_cfg.set_batch_size(batch_size, split)
 
     dataset: WaymoDatasetConfig = get_dataset_config(exp_cfg)
     dataset.sdc_index = not random
@@ -92,7 +93,7 @@ def main(
     dataset.heatmap_time = list(range(0, 90 // dataset.time_stride + 1))
     dataset.scenario_id = True
 
-    dataloader = get_dataloader(dataset, "val")
+    dataloader = dataset.get_instance(split)
 
     model = load_model(exp_cfg).eval()
     config = EvalConfig(exp_cfg.work_dir, random, n_samples)

@@ -7,8 +7,8 @@ from typing import Dict, List, Tuple, Optional
 from typing_extensions import Annotated
 
 import torch
-from konductor.metadata import Statistic
-from konductor.trainer.init import init_data_manager, get_experiment_cfg
+from konductor.metadata import Statistic, DataManager
+from konductor.init import ExperimentInitConfig
 from konductor.trainer.pytorch import (
     AsyncFiniteMonitor,
     PyTorchTrainer,
@@ -85,8 +85,13 @@ def main(
 ) -> None:
     """Main entrypoint to training model"""
 
-    # Setup Training Configuration
-    exp_config = get_experiment_cfg(workspace, config_file, run_hash)
+    if run_hash is not None:
+        assert config_file is None, "run-hash and config-file are exclusive"
+        exp_config = ExperimentInitConfig.from_run(workspace / run_hash)
+    elif config_file is not None:
+        exp_config = ExperimentInitConfig.from_config(workspace, config_file)
+    else:
+        raise RuntimeError("run-hash or config-file must be specified")
     exp_config.set_workers(workers)
 
     # Initialize Training Modules
@@ -100,7 +105,9 @@ def main(
         statistics["signal-forecast"] = src.statistics.Signal.from_config(exp_config)
     if exp_config.data[0].dataset.args.get("flow_mask", False):
         statistics["flow-predict"] = src.statistics.Flow.from_config(exp_config)
-    data_manager = init_data_manager(exp_config, train_modules, statistics)
+    data_manager = DataManager.default_build(
+        exp_config, train_modules.get_checkpointables(), statistics
+    )
     if brief is not None:
         data_manager.metadata.brief = brief
 

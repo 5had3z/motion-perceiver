@@ -72,13 +72,9 @@ class WaymoDatasetConfig(MotionDatasetConfig):
         if self.sdc_index:
             output_map.append("sdc_mask")
 
-        pipe_kwargs = (
-            self.train_loader.pipe_kwargs()
-            if split is Split.TRAIN
-            else self.val_loader.pipe_kwargs()
-        )
-        datapipe = waymo_motion_pipe(root, cfg=self, **pipe_kwargs)
-        return self.train_loader.get_instance(datapipe, output_map, -1, root.stem)
+        loader = self.train_loader if split is Split.TRAIN else self.val_loader
+        datapipe = waymo_motion_pipe(root, cfg=self, **loader.pipe_kwargs())
+        return loader.get_instance(datapipe, output_map, reader_name=root.stem)
 
 
 @pipeline_def

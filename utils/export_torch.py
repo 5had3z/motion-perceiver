@@ -7,9 +7,9 @@ import torch
 from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from konductor.utilities.pbar import LivePbar
+from konductor.metadata.perflogger import PerfLogger
 
 from src.model.motion_perceiver import MotionPerceiver
-from src.statistics import Occupancy
 from .eval_common import yield_filtered_batch
 
 
@@ -57,7 +57,7 @@ def run_export(
 
 @torch.inference_mode()
 def perf_inference(
-    model: MotionPerceiver, batch: Dict[str, Tensor], perf_logger: Occupancy
+    model: MotionPerceiver, batch: Dict[str, Tensor], perf_logger: PerfLogger
 ) -> None:
     """
     Performs inference on testing data calculates performance.
@@ -65,11 +65,12 @@ def perf_inference(
     preds: Dict[str, Tensor] = model(**batch)
     # preds["heatmap"][preds["heatmap"] < 0] *= 2
 
-    perf_logger(0, preds, batch)
+    for name in perf_logger.statistics:
+        perf_logger.calculate_and_log(name, preds, batch)
 
 
 def run_eval(
-    model: MotionPerceiver, dataloader: DALIGenericIterator, perf_logger: Occupancy
+    model: MotionPerceiver, dataloader: DALIGenericIterator, perf_logger: PerfLogger
 ) -> None:
     """Run inference over dataset and calculate performance"""
     with LivePbar(total=len(dataloader), desc="Evaluating") as pbar:

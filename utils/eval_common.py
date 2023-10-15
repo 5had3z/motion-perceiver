@@ -1,16 +1,15 @@
-from typing import Dict, List, Tuple, Set
-
+from typing import Dict, List, Set, Tuple
 
 import torch
-from torch import Tensor
 from konductor.data import get_dataset_config
-from konductor.models import get_model
 from konductor.init import ExperimentInitConfig
+from konductor.models import get_model
+from torch import Tensor
 
 from src.dataset.common import MotionDatasetConfig
-from src.dataset.waymo import WaymoDatasetConfig
 from src.dataset.interaction import InteractionConfig
 from src.dataset.sdd import SDDDatasetConfig
+from src.dataset.waymo import WaymoDatasetConfig
 from src.model.motion_perceiver import MotionPerceiver
 
 
@@ -70,9 +69,7 @@ def load_model(exp_cfg: ExperimentInitConfig) -> MotionPerceiver:
 
 
 def initialize(
-    exp_cfg: ExperimentInitConfig,
-    no_overrides: bool = False,
-    eval_waypoints: bool = False,
+    exp_cfg: ExperimentInitConfig, no_overrides: bool = False
 ) -> Tuple[MotionPerceiver, MotionDatasetConfig]:
     """Initialise model and dataset for prediction export"""
 
@@ -85,9 +82,11 @@ def initialize(
     model = load_model(exp_cfg)
     model.encoder.random_input_indicies = 0
 
-    if no_overrides:
-        return model, data_cfg
+    return model, data_cfg
 
+
+def apply_eval_overrides(data_cfg: MotionDatasetConfig, eval_waypoints: bool = False):
+    """Apply overrides to dataset for evaluation loading"""
     data_cfg.filter_future = True
     data_cfg.random_heatmap_count = 0
     data_cfg.random_heatmap_piecewise.clear()  # Ensure piecewise random is cleared
@@ -110,5 +109,3 @@ def initialize(
     elif isinstance(data_cfg, SDDDatasetConfig):
         # data_cfg.heatmap_time = [52, 76]
         data_cfg.heatmap_time = list(range(data_cfg.sequence_length))
-
-    return model.eval(), data_cfg
