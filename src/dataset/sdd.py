@@ -3,10 +3,9 @@ Stanford drone dataset
 """
 from math import ceil
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List
 
 from konductor.data import DATASET_REGISTRY, Split
-from nvidia.dali import Pipeline
 import yaml
 
 from .common import MotionDatasetConfig
@@ -41,7 +40,7 @@ class SDDDatasetConfig(MotionDatasetConfig):
 
         return super().__post_init__()
 
-    def get_instance(self, split: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
+    def get_dataloader(self, split: Split):
         tfrecords = [f"sdd_{split.name.lower()}.tfrecord"]
 
         output_map = ["agents", "agents_valid"]
@@ -52,11 +51,12 @@ class SDDDatasetConfig(MotionDatasetConfig):
         if self.scenario_id:
             output_map.append("scenario_id")
 
+        loader = self.train_loader if split is Split.TRAIN else self.val_loader
         pipeline = pedestrian_pipe(
             self.basepath,
-            **kwargs,
             cfg=self,
             tfrecords=tfrecords,
             split=split.name.lower(),
+            **loader.pipe_kwargs(),
         )
-        return pipeline, output_map, split.name.lower(), -1
+        return loader.get_instance(pipeline, output_map, reader_name=split.name.lower())

@@ -2,13 +2,13 @@
 """
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
 from konductor.data import DATASET_REGISTRY, Split, ModuleInitConfig
-from nvidia.dali import Pipeline, fn, newaxis, pipeline_def
+from nvidia.dali import fn, newaxis, pipeline_def
 from nvidia.dali.types import Constant, DALIDataType
 
 try:
@@ -49,7 +49,7 @@ class InteractionConfig(MotionDatasetConfig):
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def get_instance(self, split: Split, **kwargs) -> Tuple[Pipeline, List[str], str]:
+    def get_dataloader(self, split: Split):
         tfrec_file = self.basepath / f"interaction_{split.name.lower()}.tfrecord"
 
         output_map = ["agents", "agents_valid"]
@@ -62,8 +62,9 @@ class InteractionConfig(MotionDatasetConfig):
         if self.scenario_id:
             output_map.append("scenario_id")
 
-        datapipe = interation_pipeline(tfrec_file, cfg=self, **kwargs)
-        return datapipe, output_map, tfrec_file.stem, -1
+        loader = self.train_loader if split is Split.TRAIN else self.val_loader
+        datapipe = interation_pipeline(tfrec_file, cfg=self, **loader.pipe_kwargs())
+        return loader.get_instance(datapipe, output_map, reader_name=tfrec_file.stem)
 
 
 @pipeline_def

@@ -8,8 +8,8 @@ import typer
 import torch
 from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
-from konductor.data import get_dataloader, get_dataset_config
-from konductor.trainer.init import get_experiment_cfg
+from konductor.data import get_dataset_config, Split
+from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar
 
 from src.model import MotionPerceiver
@@ -37,12 +37,14 @@ def mask_future_data_except_target(data: Dict[str, Tensor]):
     data["signals_valid"][..., 11:] = torch.zeros_like(data["signals_valid"][..., 11:])
 
 
-def run(model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig):
+def run(model: MotionPerceiver, dataset: WaymoDatasetConfig, config: EvalConfig):
     """"""
     input_stride = model.encoder.input_indicies[0] - model.encoder.input_indicies[0]
     model.encoder.input_indicies = range(0, 91, input_stride)
     write_dir = config.path / "conditional"
     write_dir.mkdir(exist_ok=True)
+
+    loader = dataset.get_dataloader(Split.VAL)
 
     with LivePbar(total=config.n_samples, desc="Cond. Infer") as pbar:
         for data in loader:
@@ -59,6 +61,9 @@ def run(model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig)
             ]
 
             filename = scenairo_id_tensor_2_str(sample["scenario_id"])[0] + ".webm"
+            timestamps = list(range(0, dataset.sequence_length, dataset.time_stride))
+            timestamps = [t / 10 for t in timestamps]
+
             write_occupancy_video(
                 data=sample["heatmap"][0, 0].cpu().numpy(),
                 pred=pred.sigmoid().cpu().numpy(),
@@ -66,6 +71,7 @@ def run(model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig)
                 signals=signals,
                 roadmap=sample["roadmap"][0].cpu().numpy(),
                 roadmap_scale=0.5,
+                timestamps=timestamps,
             )
             pbar.update(1)
 
@@ -81,9 +87,9 @@ def main(
     random car's timesteps are added as future
     measurements so that we are essentially conditioning
     our prediction on the action taken by some agent"""
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
     exp_cfg.set_workers(4)
-    exp_cfg.set_batch_size(batch_size, "val")
+    exp_cfg.set_batch_size(batch_size, Split.VAL)
 
     dataset: WaymoDatasetConfig = get_dataset_config(exp_cfg)
     dataset.sdc_index = not random
@@ -92,12 +98,10 @@ def main(
     dataset.heatmap_time = list(range(0, 90 // dataset.time_stride + 1))
     dataset.scenario_id = True
 
-    dataloader = get_dataloader(dataset, "val")
-
     model = load_model(exp_cfg).eval()
     config = EvalConfig(exp_cfg.work_dir, random, n_samples)
     with torch.inference_mode():
-        run(model, dataloader, config)
+        run(model, dataset, config)
 
 
 if __name__ == "__main__":

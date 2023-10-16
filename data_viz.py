@@ -7,7 +7,8 @@ from pathlib import Path
 import os
 
 from torch import Tensor, inference_mode
-from konductor.data import ModuleInitConfig, Split, get_dataloader
+from konductor.data import ModuleInitConfig, Split
+from konductor.data.dali import DaliLoaderConfig
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 
 from src.dataset.common import MotionDatasetConfig
@@ -49,14 +50,11 @@ def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
 @inference_mode()
 def main():
     batch_size = 8
-    datacfg = SDDDatasetConfig(
-        train_loader=ModuleInitConfig(type="dali", args={"batch_size": batch_size}),
-        val_loader=ModuleInitConfig(
-            type="dali",
-            args={
-                "batch_size": batch_size,
-                # "augmentations": [ModuleInitConfig("center", {})],
-            },
+    datacfg = WaymoDatasetConfig(
+        train_loader=DaliLoaderConfig(batch_size=batch_size),
+        val_loader=DaliLoaderConfig(
+            batch_size=batch_size,
+            # augmentations=[ModuleInitConfig("center", {})],
         ),
         # withheld="eth",
         full_sequence=True,
@@ -77,7 +75,7 @@ def main():
         # velocity_norm=4.0,
         time_stride=2,
     )
-    dataloader: DALIGenericIterator = get_dataloader(datacfg, Split.VAL)
+    dataloader: DALIGenericIterator = datacfg.get_dataloader(Split.VAL)
     run_viz(dataloader, datacfg)
     # du.velocity_distribution(dataloader, batch_size * 10)
 

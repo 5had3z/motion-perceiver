@@ -44,21 +44,21 @@ def generate(
     """
     Export pytorch predictions to folder of numpy files
     """
-    from konductor.data import get_dataloader
-    from konductor.trainer.init import get_experiment_cfg
+    from konductor.init import ExperimentInitConfig
 
-    from utils.eval_common import initialize
+    from utils.eval_common import initialize, apply_eval_overrides
     from utils.export_torch import run_export
 
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
     exp_cfg.set_workers(workers)
     exp_cfg.set_batch_size(batch_size, split)
 
     with open(get_id_path(split), "r", encoding="utf-8") as f:
         scenario_ids = {l.strip() for l in f.readlines()}
 
-    model, dataset = initialize(exp_cfg, eval_waypoints=True)
-    dataloader = get_dataloader(dataset, split)
+    model, dataset = initialize(exp_cfg)
+    apply_eval_overrides(dataset, eval_waypoints=True)
+    dataloader = dataset.get_dataloader(split)
 
     split_name = split.name.lower()
     pred_path = run_path / f"{split_name}_blobs"
@@ -142,37 +142,35 @@ def torch_evaluate(
     batch_size: Annotated[int, typer.Option()] = 16,
 ):
     """Run evaluation with pytorch code"""
-    from konductor.data import get_dataloader_config
-    from konductor.metadata.loggers.pq_writer import _ParquetWriter
-    from konductor.trainer.init import get_experiment_cfg
+    from konductor.metadata.loggers.pq_writer import ParquetLogger
+    from konductor.metadata import PerfLogger
+    from konductor.init import ExperimentInitConfig
 
     from src.statistics import Occupancy
-    from utils.eval_common import initialize
+    from utils.eval_common import initialize, apply_eval_overrides
     from utils.export_torch import run_eval
 
-    exp_cfg = get_experiment_cfg(run_path.parent, None, run_path.name)
+    exp_cfg = ExperimentInitConfig.from_run(run_path)
     exp_cfg.set_workers(workers)
     exp_cfg.set_batch_size(batch_size, split)
 
+    model, dataset = initialize(exp_cfg)
+    apply_eval_overrides(dataset)
+
     tmp_root = Path(".cache")
     tmp_root.mkdir(exist_ok=True)
-    writer = _ParquetWriter(tmp_root, "eval_occupancy")
+    writer = ParquetLogger(tmp_root)
 
-    model, dataset = initialize(exp_cfg, eval_waypoints=True)
-
-    perf_logger = {Occupancy(time_idxs=dataset.heatmap_time)}
-    dataloader_cfg = get_dataloader_config(dataset, split)
-    dataloader_cfg.drop_last = False
-    dataloader = dataloader_cfg.get_instance()
+    perf_logger = PerfLogger(
+        writer, {"occupancy": Occupancy(time_idxs=dataset.heatmap_time)}
+    )
+    dataset.val_loader.drop_last = False
+    dataset.train_loader.drop_last = False
+    dataloader = dataset.get_dataloader(split)
 
     run_eval(model, dataloader, perf_logger)
 
-    final_data = perf_logger.data()
-
-    for k, v in final_data.items():
-        print(f"{k}: {v.mean()}")
-
-    writer.unlink()  # clean up
+    # TODO Read parquet files in folder and print results
 
 
 @app.command()
@@ -239,7 +237,7 @@ def auto_evaluate(
     need_update = find_outdated_runs(workspace, "waypoints")
     print(f"{len(need_update)} experiments to update: {need_update}")
 
-    def emph(msg: str, color: Fore):
+    def emph(msg: str, color):
         return f"{color+Style.BRIGHT}{msg}{Style.RESET_ALL}"
 
     stime = time.perf_counter()
@@ -249,7 +247,7 @@ def auto_evaluate(
             continue  # Skip experiment if marked no eval
         try:
             print(emph(f"Running {run_hash}", Fore.BLUE))
-            generate(workspace, run_hash, Split.VAL)
+            generate(workspace / run_hash, Split.VAL)
             waypoint_evaluate(workspace / run_hash, Split.VAL)
             print(
                 emph(
