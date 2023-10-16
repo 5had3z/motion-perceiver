@@ -58,7 +58,7 @@ def generate(
 
     model, dataset = initialize(exp_cfg)
     apply_eval_overrides(dataset, eval_waypoints=True)
-    dataloader = dataset.get_instance(split)
+    dataloader = dataset.get_dataloader(split)
 
     split_name = split.name.lower()
     pred_path = run_path / f"{split_name}_blobs"
@@ -166,7 +166,7 @@ def torch_evaluate(
     )
     dataset.val_loader.drop_last = False
     dataset.train_loader.drop_last = False
-    dataloader = dataset.get_instance(split)
+    dataloader = dataset.get_dataloader(split)
 
     run_eval(model, dataloader, perf_logger)
 

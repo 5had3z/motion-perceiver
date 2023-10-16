@@ -49,7 +49,7 @@ class InteractionConfig(MotionDatasetConfig):
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def get_instance(self, split: Split):
+    def get_dataloader(self, split: Split):
         tfrec_file = self.basepath / f"interaction_{split.name.lower()}.tfrecord"
 
         output_map = ["agents", "agents_valid"]

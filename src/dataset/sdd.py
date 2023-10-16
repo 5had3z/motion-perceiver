@@ -40,7 +40,7 @@ class SDDDatasetConfig(MotionDatasetConfig):
 
         return super().__post_init__()
 
-    def get_instance(self, split: Split):
+    def get_dataloader(self, split: Split):
         tfrecords = [f"sdd_{split.name.lower()}.tfrecord"]
 
         output_map = ["agents", "agents_valid"]

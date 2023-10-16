@@ -75,7 +75,7 @@ def main():
         # velocity_norm=4.0,
         time_stride=2,
     )
-    dataloader: DALIGenericIterator = datacfg.get_instance(Split.VAL)
+    dataloader: DALIGenericIterator = datacfg.get_dataloader(Split.VAL)
     run_viz(dataloader, datacfg)
     # du.velocity_distribution(dataloader, batch_size * 10)
 

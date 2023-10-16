@@ -51,7 +51,7 @@ class WaymoDatasetConfig(MotionDatasetConfig):
         if self.roadmap_size == 0:
             self.roadmap_size = self.occupancy_size
 
-    def get_instance(self, split: Split):
+    def get_dataloader(self, split: Split):
         root = {
             Split.TRAIN: self.basepath / "training",
             Split.VAL: self.basepath / "validation",

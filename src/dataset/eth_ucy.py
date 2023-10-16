@@ -37,7 +37,7 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
     def properties(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def get_instance(self, split: Split):
+    def get_dataloader(self, split: Split):
         tfrecords = (
             [s for s in SUBSETS if s != self.withheld]
             if split is Split.TRAIN

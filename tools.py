@@ -283,8 +283,9 @@ def make_video(
     exp_cfg.set_batch_size(batch_size, split)
 
     model, data_cfg = initialize(exp_cfg)
+    apply_eval_overrides(data_cfg)
 
-    dataloader = data_cfg.get_instance(split)
+    dataloader = data_cfg.get_dataloader(split)
     # model.encoder.input_indicies = set(range(0, 91, 10))
 
     eval_config = EvalConfig(
@@ -319,7 +320,7 @@ def visual_attention(
 
     model, dataset_config = initialize(exp_cfg)
     apply_eval_overrides(dataset_config)
-    dataloader = dataset_config.get_instance(Split.VAL)
+    dataloader = dataset_config.get_dataloader(Split.VAL)
 
     eval_config = EvalConfig(
         exp_cfg.work_dir / exp_cfg.data[0].dataset.type,
