@@ -3,12 +3,13 @@
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from typing_extensions import Annotated
+from typing import Dict, List, Optional, Tuple
 
 import torch
-from konductor.metadata import Statistic, DataManager
-from konductor.init import ExperimentInitConfig
+import typer
+import yaml
+from konductor.init import ExperimentInitConfig, ModuleInitConfig
+from konductor.metadata import DataManager, Statistic
 from konductor.trainer.pytorch import (
     AsyncFiniteMonitor,
     PyTorchTrainer,
@@ -17,9 +18,9 @@ from konductor.trainer.pytorch import (
 )
 from konductor.utilities import comm
 from konductor.utilities.pbar import PbarType, pbar_wrapper
-import typer
 from torch import Tensor
 from torch.profiler import record_function
+from typing_extensions import Annotated
 
 import src  # Imports all components into framework
 
@@ -82,6 +83,7 @@ def main(
     workers: Annotated[int, typer.Option()] = 4,
     pbar: Annotated[bool, typer.Option()] = False,
     brief: Annotated[Optional[str], typer.Option()] = None,
+    remote: Annotated[Optional[Path], typer.Option()] = None,
 ) -> None:
     """Main entrypoint to training model"""
 
@@ -93,6 +95,11 @@ def main(
     else:
         raise RuntimeError("run-hash or config-file must be specified")
     exp_config.set_workers(workers)
+
+    if remote is not None:
+        with open(remote, "r", encoding="utf-8") as file:
+            remote_cfg = yaml.safe_load(file)
+        exp_config.remote_sync = ModuleInitConfig(**remote_cfg)
 
     # Initialize Training Modules
     train_modules = PyTorchTrainerModules.from_config(exp_config)
