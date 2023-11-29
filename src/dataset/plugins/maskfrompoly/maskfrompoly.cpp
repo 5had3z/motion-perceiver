@@ -317,8 +317,8 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
             } else {
                 constexpr int historyOffset = 10; // one second
                 const auto oldState = static_cast<const stateData*>(dataTensor.raw_data())[cIdx - historyOffset];
-                flowX = oldState.x - data.x;
-                flowY = oldState.y - data.y;
+                flowX = (oldState.x - data.x) / roiScale * xScale;
+                flowY = (oldState.y - data.y) / roiScale * yScale;
             }
 
             // Apply to image
