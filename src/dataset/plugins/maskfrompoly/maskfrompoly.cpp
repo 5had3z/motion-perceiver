@@ -315,8 +315,11 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
                 flowX = data.vx;
                 flowY = data.vy;
             } else {
-                constexpr int historyOffset = 10; // one second
-                const auto oldState = static_cast<const stateData*>(dataTensor.raw_data())[cIdx - historyOffset];
+                const int oldTime = cIdx - 10; // one second
+                if (maskTensor.data<int>()[oldTime] == 0) {
+                    continue; // If vehicle wasn't visible at previous timestep skip
+                }
+                const auto oldState = static_cast<const stateData*>(dataTensor.raw_data())[oldTime];
                 flowX = (oldState.x - data.x) / roiScale * xScale;
                 flowY = (oldState.y - data.y) / roiScale * yScale;
             }

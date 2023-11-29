@@ -52,6 +52,7 @@ def dali_dataloader():
         full_sequence=True,
         use_sdc_frame=True,
         waymo_eval_frame=True,
+        only_vehicles=True,
     )
 
     pipeline = waymo_motion_pipe(
@@ -87,11 +88,24 @@ def test_similarity(tf_dataloader, dali_dataloader):
     tf_flow = np.moveaxis(tf_flow, [1, 4], [0, 1])
     dali_flow = dali_data["flow"].cpu().numpy()  # [B,C,T,H,W]
     assert tf_flow.shape == dali_flow.shape
+    diff = np.abs(tf_flow - dali_flow)
 
     # from matplotlib import pyplot as plt
 
-    # plt.figure()
-    # plt.imshow(tf_flow[0, 0, 0])
-    # plt.figure()
-    # plt.imshow(dali_flow[0, 0, 0])
-    # plt.show()
+    # for t_idx in range(8):
+    #     plt.subplot(231)
+    #     plt.imshow(tf_flow[0, 0, t_idx])
+    #     plt.subplot(232)
+    #     plt.imshow(dali_flow[0, 0, t_idx])
+    #     plt.subplot(233)
+    #     plt.imshow(diff[0, 0, t_idx])
+    #     plt.subplot(234)
+    #     plt.imshow(tf_flow[0, 1, t_idx])
+    #     plt.subplot(235)
+    #     plt.imshow(dali_flow[0, 1, t_idx])
+    #     plt.subplot(236)
+    #     plt.imshow(diff[0, 1, t_idx])
+    #     plt.suptitle(
+    #         f"{t_idx=}, max diff: x:{diff[0, 0, t_idx].max()}, y:{diff[0, 1, t_idx].max()}"
+    #     )
+    #     plt.show()
