@@ -4,6 +4,7 @@
 #include <execution>
 #include <functional>
 #include <limits>
+#include <span>
 #include <utility>
 
 /**
@@ -66,14 +67,9 @@ void normalize(ConstTensor inputTensor, ConstTensor maskTensor, Tensor outputTen
     // Calculate the center of the map
     const auto center = (max + min) / 2;
 
-    const auto maxElem = nElemSampleView(inputTensor);
-
-    // Can maybe use std::span and generic algorithm for this
-    for (int64_t cIdx = 0; cIdx < maxElem; cIdx++)
-    {
-        // Subtract the center of the map and divide by normalization factor
-        outputTensor.mutable_data<float>()[cIdx] = (inputTensor.data<float>()[cIdx] - center) / normalize;
-    }
+    std::span inputView(inputTensor.data<float>(), static_cast<std::size_t>(nElemSampleView(inputTensor)));
+    std::transform(std::execution::unseq, inputView.begin(), inputView.end(), outputTensor.mutable_data<float>(),
+        [=](float input) { return (input - center) / normalize; });
 }
 
 template <>
@@ -99,7 +95,7 @@ void median(ConstTensor inputTensor, ConstTensor maskTensor, Tensor outputTensor
     const auto [min, max] = findMinMax(inputTensor, maskTensor);
 
     // Calculate the center of the map
-    *outputTensor.mutable_data<float>() = (max + min) / 2;
+    outputTensor.mutable_data<float>()[0] = (max + min) / 2;
 }
 
 template <>
