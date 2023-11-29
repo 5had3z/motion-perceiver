@@ -120,9 +120,9 @@ def main(
 
     # Setup Trainer Configuration
     trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
-    if pbar:
+    if pbar and comm.get_local_rank() == 0:
         trainer_config.pbar = partial(pbar_wrapper, pbar_type=PbarType.LIVE)
-    else:
+    elif comm.get_local_rank() == 0:
         trainer_config.pbar = partial(
             pbar_wrapper, pbar_type=PbarType.INTERVAL, fraction=0.1
         )
