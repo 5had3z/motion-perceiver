@@ -1,6 +1,6 @@
 """Loss function and utilities for occupancy prediction for heatmap
 """
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
 import torch
@@ -36,7 +36,7 @@ class OccupancyLoss(LossConfig):
     pos_weight: float = 1.0
 
     def get_instance(self) -> Any:
-        return OccupancyBCE(**asdict(self))
+        return OccupancyBCE(**self.__dict__)
 
 
 class OccupancyFocal(nn.Module):
@@ -87,7 +87,7 @@ class OccupancyFocalLoss(LossConfig):
     pos_weight: float = 1.0
 
     def get_instance(self) -> Any:
-        return OccupancyFocal(**asdict(self))
+        return OccupancyFocal(**self.__dict__)
 
 
 class SignalCE(nn.CrossEntropyLoss):
@@ -124,7 +124,7 @@ class SignalCE(nn.CrossEntropyLoss):
 @REGISTRY.register_module("signal_prediction")
 class SignalBCEConfig(LossConfig):
     def get_instance(self) -> Any:
-        return SignalCE(**asdict(self))
+        return SignalCE(**self.__dict__)
 
 
 class FlowLoss(nn.Module):
@@ -142,10 +142,17 @@ class FlowLoss(nn.Module):
     def forward(
         self, preds: Dict[str, Tensor], targets: Dict[str, Tensor]
     ) -> Dict[str, Tensor]:
-        """"""
-        loss: Tensor = self.loss_fn(preds["flow"], targets["flow"], reduction="none")
+        """Apply flow loss on items where there is non-zero ground truth flow"""
+        valid_ts = torch.argwhere(
+            targets["flow"][0, 0].sum(dim=(-1, -2)) != 0
+        ).squeeze()
+        loss: Tensor = self.loss_fn(
+            preds["flow"][:, :, valid_ts],
+            targets["flow"][:, :, valid_ts],
+            reduction="none",
+        )
         if self.only_occupied:
-            loss *= targets["heatmap"]
+            loss *= targets["heatmap"][:, :, valid_ts]
 
         return {"flow": self.weight * loss.mean()}
 
@@ -157,7 +164,7 @@ class FlowLossConfig(LossConfig):
     only_occupied: bool = True
 
     def get_instance(self) -> Any:
-        return FlowLoss(**asdict(self))
+        return FlowLoss(**self.__dict__)
 
 
 class ConservationLoss(nn.Module):
@@ -181,4 +188,4 @@ class ConservationLoss(nn.Module):
 @REGISTRY.register_module("conservation")
 class ConservationConfig(LossConfig):
     def get_instance(self) -> Any:
-        return ConservationLoss(**asdict(self))
+        return ConservationLoss(**self.__dict__)

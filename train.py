@@ -101,9 +101,9 @@ def main(
     statistics: Dict[str, Statistic] = {
         "occupancy": src.statistics.Occupancy.from_config(exp_config)
     }
-    if exp_config.model[0].args.get("signal_decoder", False):
+    if "signal_decoder" in exp_config.model[0].args:
         statistics["signal-forecast"] = src.statistics.Signal.from_config(exp_config)
-    if exp_config.data[0].dataset.args.get("flow_mask", False):
+    if "flow_mask" in exp_config.data[0].dataset.args:
         statistics["flow-predict"] = src.statistics.Flow.from_config(exp_config)
     data_manager = DataManager.default_build(
         exp_config, train_modules.get_checkpointables(), statistics

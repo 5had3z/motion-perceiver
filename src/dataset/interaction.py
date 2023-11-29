@@ -235,7 +235,15 @@ def interation_pipeline(
         outputs.append(time_idx)
         outputs.append(fn.occupancy_mask(data_all, data_valid, time_idx, **occ_kwargs))
         if cfg.flow_mask:
-            outputs.append(fn.flow_mask(data_all, data_valid, time_idx, **occ_kwargs))
+            outputs.append(
+                fn.flow_mask(
+                    data_all,
+                    data_valid,
+                    time_idx,
+                    flow_type=cfg.flow_type,
+                    **occ_kwargs,
+                )
+            )
 
     outputs = [o.gpu() for o in outputs]
 
