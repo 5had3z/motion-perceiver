@@ -134,8 +134,8 @@ def _load_prediction(numpy_file: Path) -> np.ndarray:
     np_pred: np.ndarray = np.load(numpy_file)
     # Post process step on heatmap logits
     np_pred[0, np_pred[0] < 0] *= 2.0
-    if np_pred.shape[0] > 1:  # Scale flow from m/s to pix/frame
-        np_pred[1:] *= -3.2
+    # if np_pred.shape[0] > 1:  # Scale flow from m/s to pix/frame
+    #     np_pred[1:] *= -3.2
     np_pred = np.moveaxis(np_pred, 0, -1)
     return np_pred
 
@@ -426,6 +426,6 @@ def evaluate_methods(
     )
 
     with tqdm(total=ceil(len(scenario_ids) / batch_size)) as pbar:
-        stats = eval_fn(dataset, task_config, pred_path, split, pbar=pbar)
+        stats = eval_fn(dataset, task_config, pred_path, split.name.lower(), pbar=pbar)
 
     return stats
