@@ -11,9 +11,6 @@ RUN cmake -B build -S opencv-4.7.0 -G Ninja -DBUILD_LIST=imgproc && \
 # Copy Konductor from dev build
 FROM nvcr.io/nvidia/pytorch:23.08-py3
 
-# Install OpenCV from compile container
-COPY --from=opencv-build /opt/opencv /opt/opencv
-
 # Add test toolchain for gcc-13
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common && \
@@ -24,17 +21,18 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ninja-build cmake libtbb-dev g++-13 gcc-13
 
-RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
-
 # Add code cli for remote tunnel
 RUN curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' --output vscode_cli.tar.gz && \
     tar -xf vscode_cli.tar.gz -C /usr/local/bin && \
     rm vscode_cli.tar.gz
 
+# Install OpenCV from compile container
+COPY --from=opencv-build /opt/opencv /opt/opencv
+RUN cmake --install /opt/opencv/build && rm -r /opt/opencv
+
 # Install in dist-utils so not overwritten in /home/worker
 RUN pip3 install \
     einops==0.6.0 \
-    scipy==1.10.0 \ 
     paramiko==3.0.0 \
     git+https://github.com/rtqichen/torchdiffeq.git@7265eb764e97cc485ec2d8fcbd87b4b95ca416e8 \ 
     git+https://github.com/5had3z/konductor.git
