@@ -23,6 +23,14 @@ class OutputAdapter(nn.Module):
         """
         return self._output_shape
 
+    @property
+    def num_cross(self):
+        """Number of cross attention layers required
+
+        :return: int
+        """
+        return 1
+
     def forward(self, x):
         raise NotImplementedError()
 
@@ -230,3 +238,43 @@ class OccupancyFlowRefinePre(OutputAdapter):
         out = self.conv(x)
 
         return {"heatmap": out[:, [0]], "flow": out[:, 1:]}
+
+
+class OccupancyFlow2OA(OutputAdapter):
+    """Module names are consistent with OccupancyOA so pretrained weights will load correctly"""
+
+    def __init__(
+        self,
+        num_output_channels: int,
+        image_shape: Tuple[int, int] | None = None,
+    ):
+        self.image_shape = (200, 200) if image_shape is None else image_shape
+
+        super().__init__(
+            output_shape=(math.prod(self.image_shape), num_output_channels)
+        )
+        self.linear = nn.Linear(num_output_channels, 1)
+        self.linear2 = nn.Linear(num_output_channels, 2)
+
+    @property
+    def num_cross(self):
+        return 2
+
+    def forward(self, occ_feats: Tensor, flow_feats: Tensor) -> Dict[str, Tensor]:
+        """Forward Impl.
+
+        :param occ_feats: input tensor
+        :param flow_feats: input tensor
+        :return: dict with flow and heatmap
+        """
+        batch = occ_feats.shape[0]
+        ret = {}
+        out: Tensor = self.linear(occ_feats)
+        out = out.permute(0, 2, 1)
+        ret["heatmap"] = out.reshape(batch, 1, *self.image_shape)
+
+        out: Tensor = self.linear2(flow_feats)
+        out = out.permute(0, 2, 1)
+        ret["flow"] = out.reshape(batch, 2, *self.image_shape)
+
+        return ret

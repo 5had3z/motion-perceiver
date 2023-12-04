@@ -368,6 +368,17 @@ class PerceiverDecoder(nn.Module):
             residule_query=residule_query,
         )
 
+        if output_adapter.num_cross == 2:
+            self.cross_attention2 = cross_attention_layer(
+                num_q_channels=query_channels,
+                num_kv_channels=num_latent_channels,
+                num_heads=num_cross_attention_heads,
+                dropout=dropout,
+                residule_query=residule_query,
+            )
+        else:
+            self.cross_attention2 = None
+
     @torch.no_grad()
     def _init_parameters(self):
         if self._position_encoding_type == "learnable":
@@ -394,9 +405,11 @@ class PerceiverDecoder(nn.Module):
 
     def aux_forward(self, x: Tensor) -> Tensor:
         """"""
-        output = einops.repeat(self.output, "... -> b ...", b=x.shape[0])
-        output = self.cross_attention(output, x)
-        output = self.output_adapter(output)
+        query = einops.repeat(self.output, "... -> b ...", b=x.shape[0])
+        cross = [self.cross_attention(query, x)]
+        if self.cross_attention2 is not None:
+            cross.append(self.cross_attention2(query, x))
+        output = self.output_adapter(*cross)
         return output
 
     def forward(self, x: Tensor | Dict[str, Tensor]):

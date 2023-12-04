@@ -36,6 +36,7 @@ from ._oadapter import (
     OccupancyFlowRefinePre,
     OccupancyRefinePost,
     OccupancyRefinePre,
+    OccupancyFlow2OA,
 )
 
 
@@ -1259,6 +1260,7 @@ class MotionPerceiver(nn.Module):
             "prerefine": OccupancyRefinePre,
             "postrefine": OccupancyRefinePost,
             "occupancy_flow_prerefine": OccupancyFlowRefinePre,
+            "occupancy_flow_2": OccupancyFlow2OA,
         }[out_adapt["type"].lower()](**out_adapt["args"])
         self.decoder = pio.PerceiverDecoder(
             output_adapter=out_adapter,
