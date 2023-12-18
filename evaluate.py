@@ -115,7 +115,7 @@ def waypoint_evaluate(
     )
     from utils.export_tf import _evaluate_timepoints_and_mean, evaluate_methods
 
-    pred_path = run_path / f"{split}_blobs"
+    pred_path = run_path / f"{split.name.lower()}_blobs"
     metrics = evaluate_methods(
         get_id_path(split), pred_path, split, _evaluate_timepoints_and_mean
     )
