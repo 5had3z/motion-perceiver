@@ -149,9 +149,9 @@ def generate_videos(
             data: Dict[str, Tensor] = data[0]  # remove list dimension
             outputs = model(**data)
 
-            # Reformat the ground truth images
+            # Reformat the ground truth data
             if isinstance(model.encoder, MotionEncoder2Phase):
-                reduce_keys = ["heatmap"]
+                reduce_keys = ["heatmap", "signals", "signals_valid"]
                 if "flow" in data:
                     reduce_keys.append("flow")
 
@@ -164,7 +164,7 @@ def generate_videos(
                     )
                     if key == "heatmap":
                         assert data[key].shape[2] == outputs[key].shape[1]
-                    else:
+                    elif key == "flow":
                         assert data[key].shape[1] == outputs[key].shape[1]
 
                 timestamps = list(
@@ -310,6 +310,7 @@ def visual_attention(
     n_samples: Annotated[int, typer.Option()] = 16,
     batch_size: Annotated[int, typer.Option()] = 8,
     threshold: Annotated[float, typer.Option()] = 0.0,
+    split: Annotated[Split, typer.Option()] = Split.VAL,
 ):
     """Visualise attention between query position and token index"""
     exp_cfg = ExperimentInitConfig.from_run(run_path)
@@ -320,7 +321,7 @@ def visual_attention(
 
     model, dataset_config = initialize(exp_cfg)
     apply_eval_overrides(dataset_config)
-    dataloader = dataset_config.get_dataloader(Split.VAL)
+    dataloader = dataset_config.get_dataloader(split)
 
     eval_config = EvalConfig(
         exp_cfg.work_dir / exp_cfg.data[0].dataset.type,

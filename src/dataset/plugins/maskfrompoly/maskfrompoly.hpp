@@ -1,6 +1,7 @@
 #pragma once
 
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 #include <dali/pipeline/operator/operator.h>
@@ -78,11 +79,20 @@ protected:
 template <typename Backend>
 class FlowMaskGenerator : public ::dali::Operator<Backend>
 {
+public:
+    enum FlowType
+    {
+        INVALID,
+        Velocity,
+        History
+    };
+
 private:
     bool mSeparateClasses{false};
     float mROIScale{1.0};
     int64_t mFilterTimestep{-1};
     int64_t mMaskSize{0};
+    FlowType mFlowType{FlowType::INVALID};
 
 public:
     inline explicit FlowMaskGenerator(const ::dali::OpSpec& spec)
@@ -92,6 +102,17 @@ public:
         , mFilterTimestep{spec.GetArgument<int64_t>("filter_timestep")}
         , mMaskSize{spec.GetArgument<int64_t>("size")}
     {
+        static const std::unordered_map<std::string, FlowType> str2enum
+            = {{"velocity", FlowType::Velocity}, {"history", FlowType::History}};
+        const auto it = str2enum.find(spec.GetArgument<std::string>("flow_type"));
+        if (it == str2enum.end())
+        {
+            mFlowType = FlowType::INVALID;
+        }
+        else
+        {
+            mFlowType = it->second;
+        }
     }
 
     virtual inline ~FlowMaskGenerator() = default;
@@ -111,6 +132,7 @@ protected:
     bool SetupImpl(std::vector<::dali::OutputDesc>& output_desc, const ::dali::Workspace& ws) override
     {
         DALI_ENFORCE(mROIScale > 0.0 && mROIScale <= 1.0, "invalid roi, 0 < roi <= 1");
+        DALI_ENFORCE(mFlowType != FlowType::INVALID, "flow_type must be 'velocity' or 'history'");
 
         const auto nTimestamp = ws.GetInputShape(2)[0][0];
         // Class{x,y}, Timestep, Height, Width

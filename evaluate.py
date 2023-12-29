@@ -115,7 +115,7 @@ def waypoint_evaluate(
     )
     from utils.export_tf import _evaluate_timepoints_and_mean, evaluate_methods
 
-    pred_path = run_path / f"{split}_blobs"
+    pred_path = run_path / f"{split.name.lower()}_blobs"
     metrics = evaluate_methods(
         get_id_path(split), pred_path, split, _evaluate_timepoints_and_mean
     )
@@ -193,11 +193,11 @@ def update_metadata(workspace: Path):
 
 
 @app.command()
-def export(workspace: Path, run_hash: str, split: Annotated[Split, typer.Option()]):
+def export(run_path: Path, split: Annotated[Split, typer.Option()]):
     """Export predictions for waymo eval server"""
     from utils.export_tf import export_evaluation
 
-    export_evaluation(workspace / run_hash / f"{split.name}_blobs")
+    export_evaluation(run_path / f"{split.name.lower()}_blobs")
 
 
 @app.command()

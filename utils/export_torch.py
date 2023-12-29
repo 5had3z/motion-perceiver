@@ -47,7 +47,7 @@ def run_export(
     with LivePbar(total=len(scenario_ids), desc="Exporting") as pbar:
         for batch in yield_filtered_batch(dataloader, scenario_ids, batch_size):
             write_inference(model, batch[0], pred_path, gt_path)
-            pbar.update(batch_size)
+            pbar.update(batch[0]["agents"].shape[0])
             del batch
 
     # Ensure inference data is removed from memory

@@ -3,7 +3,7 @@ General AP Statistics for Occupancy Heatmap
 """
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Callable
 
 import numpy as np
 import torch
@@ -11,7 +11,6 @@ from konductor.data import get_dataset_properties
 from konductor.init import ExperimentInitConfig
 from konductor.metadata import Statistic
 from torch import Tensor
-from torch.nn.functional import l1_loss, mse_loss
 
 
 @dataclass
@@ -257,7 +256,18 @@ class Signal(Statistic):
 
 
 class Flow(Statistic):
-    _loss_fn = {"mse": mse_loss, "l1": l1_loss}
+    @staticmethod
+    def l1(pred: Tensor, tgt: Tensor, mask: Tensor) -> Tensor:
+        return torch.abs(pred - tgt) * mask
+
+    @staticmethod
+    def mse(pred, tgt, mask) -> Tensor:
+        return torch.norm(pred - tgt, dim=1, keepdim=True) * mask
+
+    _fn: dict[str, Callable[[Tensor, Tensor, Tensor], Tensor]] = {
+        "mse": mse,
+        "l1": l1,
+    }
 
     @classmethod
     def from_config(cls, cfg: ExperimentInitConfig, **extras):
@@ -265,7 +275,7 @@ class Flow(Statistic):
         return cls(time_idxs=get_time_idxs(props))
 
     def get_keys(self) -> List[str]:
-        return [f"{k}_{t}" for k, t in product(self._loss_fn.keys(), self.time_idxs)]
+        return [f"{k}_{t}" for k, t in product(self._fn.keys(), self.time_idxs)]
 
     def __init__(self, time_idxs: List[int]) -> None:
         self.time_idxs = time_idxs
@@ -275,8 +285,8 @@ class Flow(Statistic):
         res: Dict[str, float] = {}
 
         mask_time = tgt["heatmap"].transpose(0, 2)
-        for key, loss_fn in self._loss_fn.items():
-            perf = loss_fn(prd["flow"], tgt["flow"], reduction="none") * tgt["heatmap"]
+        for key, func in self._fn.items():
+            perf = func(prd["flow"], tgt["flow"], tgt["heatmap"])
             perf_time = perf.transpose(0, 2)
             for acc, mask, tidx in zip(perf_time, mask_time, tgt["time_idx"][0]):
                 acc = acc.sum(dim=[0, 2, 3]) / mask.sum(dim=[0, 2, 3])

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21.3 FATAL_ERROR)
 find_package(OpenCV REQUIRED COMPONENTS imgproc)
 
 add_library(maskfrompoly SHARED maskfrompoly.cpp)
-target_compile_features(maskfrompoly PRIVATE cxx_std_17 c_std_11)
+target_compile_features(maskfrompoly PRIVATE cxx_std_20 c_std_11)
 
 target_compile_options(
   maskfrompoly

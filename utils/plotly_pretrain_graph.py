@@ -54,7 +54,7 @@ def init_exp(root_dir: str):
         with open(cfg_path, "r", encoding="utf-8") as f:
             config_dict = yaml.safe_load(f)
         config_dict["work_dir"] = e.root
-        config = ExperimentInitConfig.from_yaml(config_dict)
+        config = ExperimentInitConfig.from_dict(config_dict)
 
         # Add edge if it is pretrained
         if "pretrained" in config.model[0].args:

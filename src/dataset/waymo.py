@@ -172,11 +172,11 @@ def waymo_motion_pipe(
     features_description["scenario/id"] = tfrec.FixedLenFeature([], tfrec.string, "")
 
     tfrec_idxs = get_tfrecord_cache(
-        record_root, [r.name for r in record_root.iterdir()]
+        record_root, [r.name for r in record_root.glob("*.tfrecord*")]
     )
 
     inputs = fn.readers.tfrecord(
-        path=[str(rec) for rec in record_root.iterdir()],
+        path=[str(rec) for rec in record_root.glob("*.tfrecord*")],
         index_path=tfrec_idxs,
         features=features_description,
         shard_id=shard_id,
@@ -289,7 +289,7 @@ def waymo_motion_pipe(
 
     # Handle class stacking specially
     data_class = fn.stack(
-        *[inputs["state/type"]] * 91 if cfg.full_sequence else 1, axis=1
+        *[inputs["state/type"]] * (91 if cfg.full_sequence else 1), axis=1
     )[:, :, newaxis]
     if cfg.only_vehicles:  # Mark all other classes as invalid
         data_valid *= fn.reshape(data_class == 1, shape=[128, -1])
@@ -412,7 +412,15 @@ def waymo_motion_pipe(
         outputs.append(time_idx)
         outputs.append(fn.occupancy_mask(data_all, data_valid, time_idx, **occ_kwargs))
         if cfg.flow_mask:
-            outputs.append(fn.flow_mask(data_all, data_valid, time_idx, **occ_kwargs))
+            outputs.append(
+                fn.flow_mask(
+                    data_all,
+                    data_valid,
+                    time_idx,
+                    flow_type=cfg.flow_type,
+                    **occ_kwargs,
+                )
+            )
 
     # Send outputs to gpu before adding cpu-only data
     outputs = [o.gpu() for o in outputs]

@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, asdict, field
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Literal
 from pathlib import Path
 from math import pi
 from subprocess import run
@@ -58,6 +58,7 @@ class MotionDatasetConfig(DatasetConfig):
     # How to scale the occupancy roi, whole image => 1, center crop => 0.5
     occupancy_roi: float = 1.0
     flow_mask: bool = False
+    flow_type: Literal["velocity", "history"] = "velocity"
     velocity_norm: float = 1.0
     time_stride: int = 1
     random_start: bool = False

@@ -12,6 +12,7 @@ namespace occupancyop
 
 using ConstDaliTensor = ::dali::ConstSampleView<::dali::CPUBackend>;
 using DaliTensor = ::dali::SampleView<::dali::CPUBackend>;
+using FlowType = FlowMaskGenerator<dali::CPUBackend>::FlowType;
 
 /**
  * @brief converts pose in pixel space to a polygon (ul, ur, bl, br)
@@ -257,7 +258,7 @@ void OccupancyMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
  * @param timeIdx
  */
 void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std::size_t inTimeIdx,
-    DaliTensor outputTensor, std::size_t outTimeIdx, float roiScale, bool separateClasses) noexcept
+    DaliTensor outputTensor, std::size_t outTimeIdx, float roiScale, bool separateClasses, FlowType flowType)
 {
     const auto outputDims = outputTensor.shape();
     const auto outputStride = outputDims[2] * outputDims[3];
@@ -277,6 +278,11 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
     const auto timeDim = dataTensor.shape()[1];
 
     DALI_ENFORCE_VALID_INDEX(inTimeIdx, static_cast<std::size_t>(timeDim));
+
+    if (flowType == FlowType::History && inTimeIdx < 10)
+    {
+        return; // Skip history if time is less than "present", step 10
+    }
 
     for (int64_t instanceId = 0; instanceId < instanceDim; ++instanceId)
     {
@@ -304,9 +310,24 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
             // Find polyPoints
             auto polyPoints = poseToPoly(x, y, data.yaw * M_PI, width, length);
 
+            cv::Scalar flowX, flowY;
+            if (flowType == FlowType::Velocity) {
+                flowX = data.vx;
+                flowY = data.vy;
+            } else {
+                const int oldTime = cIdx - 10; // one second
+                if (maskTensor.data<int>()[oldTime] == 0) {
+                    continue; // If vehicle wasn't visible at previous timestep skip
+                }
+                const auto oldState = static_cast<const stateData*>(dataTensor.raw_data())[oldTime];
+                flowX = (oldState.x - data.x) / roiScale * xScale;
+                flowY = (oldState.y - data.y) / roiScale * yScale;
+            }
+
             // Apply to image
-            cv::fillConvexPoly(flowImages[separateClasses ? 2 * classIdx : 0], polyPoints, cv::Scalar(data.vx));
-            cv::fillConvexPoly(flowImages[separateClasses ? 2 * classIdx + 1 : 1], polyPoints, cv::Scalar(data.vy));
+            const int chOff = separateClasses ? 2 * classIdx : 0;
+            cv::fillConvexPoly(flowImages[chOff], polyPoints, flowX);
+            cv::fillConvexPoly(flowImages[chOff + 1], polyPoints, flowY);
         }
     }
 }
@@ -315,7 +336,7 @@ void createFlowImage(ConstDaliTensor dataTensor, ConstDaliTensor maskTensor, std
  * @brief Run over multiple time indexes
  */
 void createFlowImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTensor, ConstDaliTensor timeIdxs,
-    DaliTensor outputTensor, float roiScale, int filterEndIdx, bool separateClasses) noexcept
+    DaliTensor outputTensor, float roiScale, int filterEndIdx, bool separateClasses, FlowType flowType)
 {
     const std::vector<int> futureMask
         = filterEndIdx > 0 ? maskInvalidFuture(maskTensor, filterEndIdx) : std::vector<int>();
@@ -324,8 +345,8 @@ void createFlowImageMulti(ConstDaliTensor stateTensor, ConstDaliTensor maskTenso
 
     for (int64_t outputIdx = 0; outputIdx < timeIdxs.shape()[0]; ++outputIdx)
     {
-        createFlowImage(
-            stateTensor, mask_, timeIdxs.data<int>()[outputIdx], outputTensor, outputIdx, roiScale, separateClasses);
+        createFlowImage(stateTensor, mask_, timeIdxs.data<int>()[outputIdx], outputTensor, outputIdx, roiScale,
+            separateClasses, flowType);
     }
 }
 
@@ -345,7 +366,7 @@ void FlowMaskGenerator<::dali::CPUBackend>::RunImpl(::dali::Workspace& ws)
             [&, sampleId](int)
             {
                 createFlowImageMulti(stateTensor[sampleId], maskTensor[sampleId], timeTensor[sampleId],
-                    outputTensor[sampleId], mROIScale, mFilterTimestep, mSeparateClasses);
+                    outputTensor[sampleId], mROIScale, mFilterTimestep, mSeparateClasses, mFlowType);
             });
     }
     tPool.RunAll();
@@ -380,4 +401,5 @@ DALI_SCHEMA(FlowMask)
     .AddArg("size", "Size of the output image, the image is always square", ::dali::DALIDataType::DALI_INT64)
     .AddArg("roi", "Scale to fraction of ROI observeable, centered", ::dali::DALIDataType::DALI_FLOAT)
     .AddArg("separate_classes", "Separate classes occupancy into different channels", ::dali::DALIDataType::DALI_BOOL)
-    .AddOptionalArg("filter_timestep", "Filter ids that don't appear in the frames before this timestep", -1);
+    .AddOptionalArg("filter_timestep", "Filter ids that don't appear in the frames before this timestep", -1)
+    .AddOptionalArg("flow_type", "Type of flow to generate (velocity or history)", std::string("velocity"));
