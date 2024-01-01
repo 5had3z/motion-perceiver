@@ -1,0 +1,101 @@
+dataset:
+  - type: waymo_motion
+    args:
+      filter_future: true
+      flow_mask: true
+      flow_type: history
+      full_sequence: true
+      heatmap_time: [0, 10]
+      map_normalize: 80.0
+      occupancy_roi: 0.5
+      occupancy_size: 256
+      only_vehicles: true
+      random_heatmap_piecewise:
+        - max: 9
+          min: 0
+          n_random: 1
+          stride: 1
+        - max: 90
+          min: 10
+          n_random: 2
+          stride: 10
+      roadmap: true
+      roadmap_size: 256
+      signal_features: true
+      time_stride: 1
+      use_sdc_frame: true
+      waymo_eval_frame: true
+    train_loader:
+      args:
+        batch_size: 64
+        drop_last: true
+        shuffle: true
+      type: DALI
+    val_loader:
+      args:
+        batch_size: 128
+        drop_last: true
+      type: DALI
+criterion:
+  - type: occupancy_focal
+    args:
+      alpha: 0.75
+  - type: occupancy_flow
+    args:
+      loss_type: huber
+      weight: 0.1
+model:
+  - type: motion-perceiver
+    args:
+      pretrained: 7fe145705cb5a9724fbd7334bbb31465.pt
+      encoder:
+        version: 8
+        num_latents: 128
+        num_latent_channels: 256
+        input_indicies: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        detach_latent: true
+        adapter:
+          type: vehicle
+          args:
+            input_mode: fpos_extra
+            map_n_bands: 64
+            yaw_n_bands: 64
+        signal_ia:
+          type: signal
+          args:
+            onehot: true
+            input_mode: fpos
+            num_frequency_bands: 32
+        roadgraph_ia:
+          type: conv1
+          args:
+            avg_pool_shape: [8, 8]
+            conv_ch: 128
+            num_frequency_bands: 16
+      decoder:
+        position_encoding_type: fourier
+        num_frequency_bands: 32
+        residule_query: false
+        adapter:
+          type: occupancy_flow_prerefine
+          args:
+            conv_dim: 32
+            kernel_size: 5
+    optimizer:
+      type: AdamW
+      args:
+        step_interval: 1
+        lr: 0.001
+      scheduler:
+        type: poly
+        args:
+          max_iter: 75
+          power: 0.9
+checkpointer:
+  extra: 25
+  latest: 1
+  mode: epoch
+logger:
+  interval: 1000
+trainer:
+  pre_eval: true
