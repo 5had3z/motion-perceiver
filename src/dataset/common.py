@@ -64,6 +64,8 @@ class MotionDatasetConfig(DatasetConfig):
     random_start: bool = False
     scenario_id: bool = False
 
+    seed: int = -1
+
     @property
     def properties(self) -> Dict[str, Any]:
         return asdict(self)

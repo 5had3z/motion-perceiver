@@ -183,6 +183,7 @@ def waymo_motion_pipe(
         num_shards=num_shards,
         random_shuffle=random_shuffle,
         name=record_root.stem,
+        seed=cfg.seed,
     )
 
     # data contains all feature information required
