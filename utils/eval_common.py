@@ -61,7 +61,7 @@ def yield_filtered_batch(dataloader, filter_ids: Set[str], batch_thresh: int):
 def load_model(exp_cfg: ExperimentInitConfig) -> MotionPerceiver:
     model: MotionPerceiver = get_model(exp_cfg).cuda()
     ckpt = torch.load(
-        exp_cfg.work_dir / "latest.pt",
+        exp_cfg.exp_path / "latest.pt",
         map_location=f"cuda:{torch.cuda.current_device()}",
     )["model"]
     model.load_state_dict(ckpt)

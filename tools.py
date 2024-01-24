@@ -289,7 +289,7 @@ def make_video(
     # model.encoder.input_indicies = set(range(0, 91, 10))
 
     eval_config = EvalConfig(
-        exp_cfg.work_dir / exp_cfg.data[0].dataset.type / str(split.name.lower()),
+        exp_cfg.exp_path / exp_cfg.data[0].dataset.type / str(split.name.lower()),
         batch_size,
         n_samples,
         threshold,
@@ -324,7 +324,7 @@ def visual_attention(
     dataloader = dataset_config.get_dataloader(split)
 
     eval_config = EvalConfig(
-        exp_cfg.work_dir / exp_cfg.data[0].dataset.type,
+        exp_cfg.exp_path / exp_cfg.data[0].dataset.type,
         batch_size,
         n_samples,
         threshold,

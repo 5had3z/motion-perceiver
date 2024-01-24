@@ -99,7 +99,7 @@ def main(
     dataset.scenario_id = True
 
     model = load_model(exp_cfg).eval()
-    config = EvalConfig(exp_cfg.work_dir, random, n_samples)
+    config = EvalConfig(exp_cfg.exp_path, random, n_samples)
     with torch.inference_mode():
         run(model, dataset, config)
 
