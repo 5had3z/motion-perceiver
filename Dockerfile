@@ -1,15 +1,14 @@
 # Compile OpenCV with imgproc for DALI Plugin
 FROM ubuntu:22.04 AS opencv-build
 WORKDIR /opt/opencv
-RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip ninja-build
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y cmake g++ wget unzip ninja-build
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.7.0.zip && \
     unzip opencv.zip
 RUN cmake -B build -S opencv-4.7.0 -G Ninja -DBUILD_LIST=imgproc && \
     cmake --build build --parallel
 
-# Copy Konductor from dev build
-FROM nvcr.io/nvidia/pytorch:23.08-py3
+# Main image build
+FROM nvcr.io/nvidia/pytorch:23.08-py3 AS main-build
 
 # Add test toolchain for gcc-13
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \

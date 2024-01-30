@@ -1,4 +1,6 @@
-# Compose file to create tensorflow container to export waymo eval data
+# Compose file to create tensorflow container to export waymo eval data.
+# Can use `docker compose build` to create the image, assuming that 
+# docker-build.sh was previously run to create the baseline image.
 version: '3.3'
 services:
   waymo-eval:
@@ -6,18 +8,25 @@ services:
     tty: true
     build:
       dockerfile: tf.Dockerfile
-    image: mp:tf
+      args:
+        - BASE_IMAGE=$REGISTRY_URL/mp:master
+    image: $REGISTRY_URL/mp:tf
     entrypoint:
+      # [
+      #   python3,
+      #   /workspace/evaluate.py,
+      #   evaluate,
+      #   /ckpt/4c91d8d74a07bb2894158848c74a188b,
+      #   --split,
+      #   VAL
+      # ]
       [
-        "python3",
-        "evaluate.py",
-        "evaluate",
-        "/ckpt/653ffb701d16be1bc0f1f1cac5e90fac",
-        "--split",
-        "val"
+        pytest,
+        test/test_waymo_native.py
       ]
     environment:
       - PRETRAINED_ROOT=/ckpt
+      - IMAGE_OUT=/workspace
     volumes:
       - type: bind
         source: ./

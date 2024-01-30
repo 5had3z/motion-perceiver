@@ -91,6 +91,7 @@ def test_similarity(tf_dataloader, dali_dataloader):
     diff = np.abs(tf_flow - dali_flow)
 
     # from matplotlib import pyplot as plt
+    # import os
 
     # for t_idx in range(8):
     #     plt.subplot(231)
@@ -108,4 +109,4 @@ def test_similarity(tf_dataloader, dali_dataloader):
     #     plt.suptitle(
     #         f"{t_idx=}, max diff: x:{diff[0, 0, t_idx].max()}, y:{diff[0, 1, t_idx].max()}"
     #     )
-    #     plt.show()
+    #     plt.savefig(f"{os.environ['IMAGE_OUT']}/waymo_diff_{t_idx}.png")

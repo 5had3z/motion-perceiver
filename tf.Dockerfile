@@ -1,6 +1,10 @@
-FROM nvcr.io/nvidia/tensorflow:23.06-tf2-py3
+# Tensorflow dockerfile for testing things and running results export
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 
-RUN apt-get update && apt-get install -y libopenexr-dev
-RUN pip3 install \
-    waymo_open_dataset_tf_2_11_0==1.5.2 \
-    git+https://github.com/5had3z/konductor.git
+# Waymo will download tensorflow as a dependency
+USER root
+RUN apt-get install -y libopenexr-dev && \
+    pip3 install pytest waymo_open_dataset_tf_2_11_0==1.6.1
+
+USER worker
