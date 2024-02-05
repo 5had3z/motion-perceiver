@@ -1,15 +1,13 @@
-# Motion Perceiver: Real-Time Occupancy Forecasting for Embedded Systems
+# Motion Perceiver: Real-Time Occupancy Forecasting for Embedded Systems 
 
 ### 🥇 1st - Observed Occupancy Soft-IoU Waymo Open Motion (22/08/23)
 ### 🥉 3rd - Observed Occupancy AUC Waymo Open Motion (26/12/23)
 
-[link](https://waymo.com/open/challenges/2022/occupancy-flow-prediction-challenge/)
+[waymo leaderboard](https://waymo.com/open/challenges/2022/occupancy-flow-prediction-challenge/)
 
-## Abstract
+## Abstract - [arXiv](https://arxiv.org/abs/2306.08879)
 
-This work introduces a novel and adaptable architecture designed for real-time occupancy forecasting that outperforms existing state-of-the-art models on the Waymo Open Motion Dataset in Soft IOU. The proposed model uses recursive latent state estimation with learned transformer-based functions to effectively update and evolve the state. This enables highly efficient real-time inference on embedded systems, as profiled on an Nvidia Xavier AGX. Our model, MotionPerceiver, achieves this by encoding a scene into a latent state that evolves in time through self-attention mechanisms. Additionally, it incorporates relevant scene observations, such as traffic signals, road topology and agent detections, through cross-attention mechanisms. This forms an efficient data-streaming architecture, that contrasts with the expensive, fixed-sequence input common in existing models. The architecture also offers the distinct advantage of generating occupancy predictions through localized querying based on a position of interest, as opposed to generating fixed-size occupancy images, including potentially irrelevant regions.
-
-[arxiv](https://arxiv.org/abs/2306.08879) (currently outdated)
+This work introduces a novel and adaptable architecture designed for real-time occupancy foXecasting that outperforms existing state-of-the-art models on the Waymo Open Motion Dataset in Soft IOU. The proposed model uses recursive latent state estimation with learned transformer-based functions to effectively update and evolve the state. This enables highly efficient real-time inference on embedded systems, as profiled on an Nvidia Xavier AGX. Our model, MotionPerceiver, achieves this by encoding a scene into a latent state that evolves in time through self-attention mechanisms. Additionally, it incorporates relevant scene observations, such as traffic signals, road topology and agent detections, through cross-attention mechanisms. This forms an efficient data-streaming architecture, that contrasts with the expensive, fixed-sequence input common in existing models. The architecture also offers the distinct advantage of generating occupancy predictions through localized querying based on a position of interest, as opposed to generating fixed-size occupancy images, including potentially irrelevant regions.
 
 ## Model and Inference Diagram
 
