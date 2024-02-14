@@ -9,6 +9,22 @@
 
 This work introduces a novel and adaptable architecture designed for real-time occupancy foXecasting that outperforms existing state-of-the-art models on the Waymo Open Motion Dataset in Soft IOU. The proposed model uses recursive latent state estimation with learned transformer-based functions to effectively update and evolve the state. This enables highly efficient real-time inference on embedded systems, as profiled on an Nvidia Xavier AGX. Our model, MotionPerceiver, achieves this by encoding a scene into a latent state that evolves in time through self-attention mechanisms. Additionally, it incorporates relevant scene observations, such as traffic signals, road topology and agent detections, through cross-attention mechanisms. This forms an efficient data-streaming architecture, that contrasts with the expensive, fixed-sequence input common in existing models. The architecture also offers the distinct advantage of generating occupancy predictions through localized querying based on a position of interest, as opposed to generating fixed-size occupancy images, including potentially irrelevant regions.
 
+### Citation
+
+```bibtext
+@ARTICLE{10417132,
+  author={Ferenczi, Bryce and Burke, Michael and Drummond, Tom},
+  journal={IEEE Robotics and Automation Letters}, 
+  title={MotionPerceiver: Real-Time Occupancy Forecasting for Embedded Systems}, 
+  year={2024},
+  volume={9},
+  number={3},
+  pages={2822-2829},
+  keywords={Forecasting;Predictive models;Trajectory;Real-time systems;Encoding;Tracking;Prediction algorithms;Computer vision for transportation;deep learning for visual perception;representation learning},
+  doi={10.1109/LRA.2024.3360811}}
+```
+
+
 ## Model and Inference Diagram
 
 ![ArchImage](./media/arch.svg "MotionPerceiver Architecture")
