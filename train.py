@@ -119,7 +119,7 @@ def main(
         data_manager.metadata.brief = brief
 
     # Setup Trainer Configuration
-    trainer_config = PyTorchTrainerConfig(**exp_config.trainer_kwargs)
+    trainer_config = PyTorchTrainerConfig(**exp_config.trainer)
     if pbar and comm.get_local_rank() == 0:
         trainer_config.pbar = partial(pbar_wrapper, pbar_type=PbarType.LIVE)
     elif comm.get_local_rank() == 0:

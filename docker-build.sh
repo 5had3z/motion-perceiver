@@ -1,3 +1,4 @@
+#!/bin/bash
 tag="$(git rev-parse --abbrev-ref HEAD | sed "s/.*\///")"
 gitsha="$(git rev-parse --short HEAD)"
 

@@ -48,4 +48,4 @@ class MotionPerceiverConfig(TorchModelConfig):
 
     def get_instance(self, *args, **kwargs) -> Any:
         model_ = MotionPercieverWSignals if self.signal_decoder else MotionPerceiver
-        return self._apply_extra(model_(self.encoder, self.decoder))
+        return model_(self.encoder, self.decoder)

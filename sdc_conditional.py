@@ -7,7 +7,6 @@ from typing_extensions import Annotated
 import typer
 import torch
 from torch import Tensor
-from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from konductor.data import get_dataset_config, Split
 from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar

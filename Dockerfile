@@ -34,7 +34,7 @@ RUN pip3 install \
     einops==0.6.0 \
     paramiko==3.0.0 \
     git+https://github.com/rtqichen/torchdiffeq.git@7265eb764e97cc485ec2d8fcbd87b4b95ca416e8 \ 
-    git+https://github.com/5had3z/konductor.git
+    git+https://github.com/5had3z/konductor.git@dbb4e38
 
 RUN useradd -rm -d /home/worker -s /bin/bash -G sudo -U -u 1000 worker
 USER worker

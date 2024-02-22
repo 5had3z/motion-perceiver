@@ -4,7 +4,9 @@ import math
 from typing import Any, Dict, List
 
 import numpy as np
-from nvidia.dali import pipeline_def, newaxis, fn
+from nvidia.dali import fn
+from nvidia.dali.pipeline import pipeline_def
+from nvidia.dali.data_node import newaxis
 from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
