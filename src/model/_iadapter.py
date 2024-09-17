@@ -529,9 +529,14 @@ class ResNet8(nn.Module):
     """Basic ResNet-8 Implementation"""
 
     def __init__(
-        self, in_ch: int = 3, base_ch: int = 32, num_classes: int = 1000
+        self,
+        in_ch: int = 3,
+        base_ch: int = 32,
+        num_classes: int = 1000,
+        no_classify: bool = False,
     ) -> None:
         super().__init__()
+        self.no_classify = no_classify
 
         self.in_bottleneck = nn.Sequential(
             nn.Conv2d(in_ch, base_ch, kernel_size=3, stride=1, padding=1, bias=False),
@@ -548,7 +553,9 @@ class ResNet8(nn.Module):
             self.layer2.conv2.out_channels, base_ch * 4, stride=2
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * BasicBlock.expansion, num_classes)
+        self.fc = nn.Linear(
+            self.layer3.conv2.out_channels * BasicBlock.expansion, num_classes
+        )
 
     @property
     def out_channels(self) -> int:
@@ -573,6 +580,12 @@ class ResNet8(nn.Module):
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
+
+        if self.no_classify:
+            return out
+
+        out = self.avgpool(out).flatten(1)
+        out = self.fc(out)
         return out
 
 
@@ -591,7 +604,7 @@ class ResNet8Encoder(InputAdapter):
         pos_enc_ch = len(avg_pool_shape) * (2 * num_frequency_bands)
         super().__init__(num_input_channels=feat_ch + pos_enc_ch)
 
-        self.encoder = ResNet8(input_ch, resnet_ch)
+        self.encoder = ResNet8(input_ch, resnet_ch, no_classify=True)
         self.avg_pool = nn.AdaptiveAvgPool2d(avg_pool_shape)
         self.feat_conv = conv1x1(self.encoder.out_channels, feat_ch)
 

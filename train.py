@@ -71,6 +71,47 @@ class Trainer(PyTorchTrainer):
         return losses, pred
 
 
+class ImageNetTrainer(PyTorchTrainer):
+    """Handle image-label pair a bit differently"""
+
+    def data_transform(self, data: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
+        """Remove list dimension"""
+        return data[0]
+
+    def train_step(self, data) -> Tuple[Dict[str, Tensor] | None, ...]:
+        pred = self.modules.model(data["image"])
+        losses = {}
+        for criterion in self.modules.criterion:
+            losses.update(criterion(pred, data["label"][:, 0]))
+        return losses, {"pred": pred}
+
+    def val_step(self, data) -> Tuple[Dict[str, Tensor] | None, ...]:
+        pred = self.modules.model(data["image"])
+        losses = {}
+        for criterion in self.modules.criterion:
+            losses.update(criterion(pred, data["label"][:, 0]))
+        return losses, {"pred": pred}
+
+
+def get_statistics(exp_config: ExperimentInitConfig):
+    """Get statistics used for training based on dataset and algorithm configurations"""
+    statistics: Dict[str, Statistic] = {}
+    if exp_config.data[0].dataset.type == "imagenet-1k":
+        statistics["classification"] = src.statistics.Classification.from_config(
+            exp_config
+        )
+    else:
+        statistics["occupancy"] = src.statistics.Occupancy.from_config(exp_config)
+        if "signal_decoder" in exp_config.model[0].args:
+            statistics["signal-forecast"] = src.statistics.Signal.from_config(
+                exp_config
+            )
+        if "flow_mask" in exp_config.data[0].dataset.args:
+            statistics["flow-predict"] = src.statistics.Flow.from_config(exp_config)
+
+    return statistics
+
+
 app = typer.Typer()
 
 
@@ -105,15 +146,8 @@ def main(
     train_modules = PyTorchTrainerModules.from_config(exp_config)
 
     # Setup Metadata Modules
-    statistics: Dict[str, Statistic] = {
-        "occupancy": src.statistics.Occupancy.from_config(exp_config)
-    }
-    if "signal_decoder" in exp_config.model[0].args:
-        statistics["signal-forecast"] = src.statistics.Signal.from_config(exp_config)
-    if "flow_mask" in exp_config.data[0].dataset.args:
-        statistics["flow-predict"] = src.statistics.Flow.from_config(exp_config)
     data_manager = DataManager.default_build(
-        exp_config, train_modules.get_checkpointables(), statistics
+        exp_config, train_modules.get_checkpointables(), get_statistics(exp_config)
     )
     if brief is not None:
         data_manager.metadata.brief = brief
@@ -127,7 +161,10 @@ def main(
             pbar_wrapper, pbar_type=PbarType.INTERVAL, fraction=0.1
         )
 
-    trainer = Trainer(trainer_config, train_modules, data_manager)
+    if exp_config.data[0].dataset.type == "imagenet-1k":
+        trainer = ImageNetTrainer(trainer_config, train_modules, data_manager)
+    else:
+        trainer = Trainer(trainer_config, train_modules, data_manager)
 
     trainer.train(epoch=epoch)
     if isinstance(trainer.loss_monitor, AsyncFiniteMonitor):

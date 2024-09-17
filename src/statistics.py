@@ -294,3 +294,29 @@ class Flow(Statistic):
                 res[f"{key}_{tidx.item()}"] = acc.mean().item()
 
         return res
+
+
+class Classification(Statistic):
+    @classmethod
+    def from_config(cls, cfg: ExperimentInitConfig, **extras):
+        dataset_cfg = get_dataset_properties(cfg)
+        return cls(dataset_cfg["num_classes"])
+
+    def __init__(self, num_classes: int) -> None:
+        super().__init__()
+        self.num_classes = num_classes
+
+    def get_keys(self) -> List[str]:
+        return ["top1", "top5"]
+
+    def __call__(
+        self, prd: Dict[str, Tensor], tgt: Dict[str, Tensor]
+    ) -> Dict[str, float]:
+        _, pred_indices = torch.topk(prd["pred"], k=5, dim=-1)
+        top5 = torch.isin(tgt["label"], pred_indices, assume_unique=True)
+        top1 = tgt["label"] == torch.argmax(prd["pred"], dim=-1)
+
+        return {
+            "top1": torch.mean(top1, dtype=torch.float32).item(),
+            "top5": torch.mean(top5, dtype=torch.float32).item(),
+        }

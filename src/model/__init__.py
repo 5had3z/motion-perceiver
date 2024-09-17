@@ -6,6 +6,7 @@ from konductor.models import MODEL_REGISTRY, ExperimentInitConfig
 from konductor.models._pytorch import TorchModelConfig
 
 from .motion_perceiver import MotionPerceiver, MotionPercieverWSignals
+from ._iadapter import ResNet8
 
 
 @dataclass
@@ -49,3 +50,22 @@ class MotionPerceiverConfig(TorchModelConfig):
     def get_instance(self, *args, **kwargs) -> Any:
         model_ = MotionPercieverWSignals if self.signal_decoder else MotionPerceiver
         return model_(self.encoder, self.decoder)
+
+
+@dataclass
+@MODEL_REGISTRY.register_module("resnet-8")
+class ResNet8Cfg(TorchModelConfig):
+    num_classes: int
+    base_ch: int
+
+    @classmethod
+    def from_config(cls, config: ExperimentInitConfig, idx: int = 0) -> Any:
+        props = get_dataset_properties(config)
+        model_cfg = config.model[idx].args
+        model_cfg["num_classes"] = props["num_classes"]
+        return super().from_config(config, idx)
+
+    def get_instance(self, *args, **kwargs) -> Any:
+        return ResNet8(
+            base_ch=self.base_ch, num_classes=self.num_classes, no_classify=False
+        )
