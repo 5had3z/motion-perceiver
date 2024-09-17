@@ -30,6 +30,7 @@ except ImportError:
     )
 
 
+# Match make_interaction.py
 _MAX_AGENTS: int = 64
 _MAX_ROADGRAPH: int = 1024
 _TIMESPAN: int = 40

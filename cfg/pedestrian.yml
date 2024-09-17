@@ -1,47 +1,52 @@
 dataset:
   - type: sdd
     args:
-      map_normalize: 30.0
-      full_sequence: true
-      occupancy_size: 256
       filter_future: true
+      full_sequence: true
+      map_normalize: 30.0
+      occupancy_size: 256
       roadmap: true
       roadmap_size: 256
-      heatmap_time: [0, 14]
-      random_heatmap_minmax: [0, 38]
-      random_heatmap_count: 3
+      heatmap_time: [0, 8]
+      random_heatmap_minmax: [0, 20]
+      random_heatmap_count: 4
       occupancy_roi: 0.5
-      time_stride: 2
-    loader:
+      fake_size: 0.5
+    train_loader:
       type: DALI
       args:
-        batch_size: 8
+        batch_size: 32
+        drop_last: true
+        shuffle: true
+    val_loader:
+      type: DALI
+      args:
+        batch_size: 64
         drop_last: true
 criterion:
   - type: occupancy_focal
     args:
-      alpha: 0.95
+      alpha: 0.75
 model:
   - type: motion-perceiver
     args:
+      pretrained: eb0b15550ed75584948ebcb10fde0da3.pt
       encoder:
         version: 7
         num_latents: 128
         num_latent_channels: 256
-        input_indicies: [0, 5, 10]
+        input_indicies: [0, 2, 4, 6, 8]
         detach_latent: true
         adapter:
           type: vehicle
           args:
             input_mode: fpos_extra
-            map_n_bands: 32
-            yaw_n_bands: 8
-            yaw_max_freq: 16.0
+            map_n_bands: 64
+            yaw_n_bands: 64
         roadgraph_ia:
-          type: conv1
+          type: resnet8
           args:
-            raster_ch: 3
-            conv_ch: 128
+            feat_ch: 64
             num_frequency_bands: 16
             avg_pool_shape: [8, 8]
       decoder:
@@ -50,12 +55,11 @@ model:
         residule_query: false
         adapter:
           type: heatmap
-          args:
-            num_output_channels: 128
+          args: {}
     optimizer:
       type: AdamW
       args:
-        step_interval: 5
+        step_interval: 1
         lr: 0.001
       scheduler:
         type: poly

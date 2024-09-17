@@ -5,6 +5,7 @@ Conglomoration of ETH and UCY pedestrain datasets into a set of tfrecords.
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict
 
+import yaml
 from konductor.data import DATASET_REGISTRY, Split
 
 try:
@@ -13,25 +14,23 @@ try:
 except ImportError:
     from common import MotionDatasetConfig
 
-PAST_FRAMES = 8
-FUTURE_FRAMES = 12
-SEQUENCE_LENGTH = PAST_FRAMES + FUTURE_FRAMES
-MAX_AGENTS = 83
-SUBSETS = {"eth", "hotel", "uni", "zara1", "zara2", "zara3", "students1", "students3"}
-
 
 @dataclass
 @DATASET_REGISTRY.register_module("eth-ucy")
 class ETHUCYDatasetConfig(MotionDatasetConfig):
+    subsets: list[str] = field(init=False)
     withheld: str = field(kw_only=True)
-    sequence_length: int = SEQUENCE_LENGTH
-    max_agents: int = MAX_AGENTS
-    current_time_idx: int = PAST_FRAMES
+    current_time_idx: int = 8
 
     def __post_init__(self):
         super().__post_init__()
-        assert self.withheld in SUBSETS
         self.basepath /= "eth_ucy_tfrecord"
+        with open(self.basepath / "metadata.yaml", "r", encoding="utf-8") as f:
+            metadata = yaml.safe_load(f)
+        self.subsets = metadata["subsets"]
+        assert self.withheld in self.subsets
+        self.sequence_length = metadata["sequence_length"]
+        self.max_agents = metadata["max_agents"]
 
     @property
     def properties(self) -> Dict[str, Any]:
@@ -39,7 +38,7 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
 
     def get_dataloader(self, split: Split):
         tfrecords = (
-            [s for s in SUBSETS if s != self.withheld]
+            [s for s in self.subsets if s != self.withheld]
             if split is Split.TRAIN
             else [self.withheld]
         )

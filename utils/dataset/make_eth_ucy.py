@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Converts eth_ucy dataset into tfrecords that are slices of sequences for
 easy and efficient dataloading with DALI.
@@ -16,11 +17,10 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import typer
+import yaml
 from typing_extensions import Annotated
 
 app = typer.Typer()
-
-from src.dataset.eth_ucy import MAX_AGENTS, SEQUENCE_LENGTH, SUBSETS
 
 TXT2RECORD = {
     "biwi_eth": "eth",
@@ -33,9 +33,8 @@ TXT2RECORD = {
     "uni_examples": "uni",
 }
 
-assert (
-    set(TXT2RECORD.values()) == SUBSETS
-), "Mismatch between defined subsets and txt2record mapping"
+DEFAULT_SEQUENCE_LEN = 20
+DEFAULT_MAX_AGENTS = 83
 
 
 def get_filenames(root: Path):
@@ -78,7 +77,7 @@ def format_dataframe(df: pd.DataFrame):
 
 @app.command()
 def get_statistics(
-    path: Path, length: Annotated[int, typer.Option()] = SEQUENCE_LENGTH
+    path: Path, length: Annotated[int, typer.Option()] = DEFAULT_SEQUENCE_LEN
 ):
     """
     Run over the datsets with a given sequence length.
@@ -163,8 +162,8 @@ def make_tf_example(
         return None
 
     # Fill out valid data
-    for idx, id in enumerate(uids):
-        agent = df[df["id"] == id]
+    for idx, id_ in enumerate(uids):
+        agent = df[df["id"] == id_]
         valid[idx, agent["ts"]] = 1
         x[idx, agent["ts"]] = agent["x"]
         y[idx, agent["ts"]] = agent["y"]
@@ -228,8 +227,8 @@ def build(
     source: Path,
     dest: Annotated[Optional[Path], typer.Option()] = None,
     stride: Annotated[Optional[int], typer.Option()] = None,
-    length: Annotated[int, typer.Option()] = SEQUENCE_LENGTH,
-    max_agents: Annotated[int, typer.Option()] = MAX_AGENTS,
+    length: Annotated[int, typer.Option()] = DEFAULT_SEQUENCE_LEN,
+    max_agents: Annotated[int, typer.Option()] = DEFAULT_MAX_AGENTS,
 ):
     """Build the dataset with sequence length and dimension max_agents, sample at stride"""
     if stride is None:
@@ -243,6 +242,15 @@ def build(
     for dataset in filenames:
         tfrecord_file = (dest / TXT2RECORD[dataset.stem]).with_suffix(".tfrecord")
         create_tfrecord_dataset(dataset, tfrecord_file, stride, length, max_agents)
+
+    meta_file = dest / "metadata.yaml"
+    meta_data = {
+        "sequence_length": length,
+        "max_agents": max_agents,
+        "subsets": list(TXT2RECORD.values()),
+    }
+    with open(meta_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(meta_data, f)
 
 
 if __name__ == "__main__":

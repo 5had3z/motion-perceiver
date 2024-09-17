@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from multiprocessing import get_context
@@ -8,9 +9,13 @@ from xml.etree import ElementTree
 import numpy as np
 import tensorflow as tf
 import typer
-from interaction import _MAX_AGENTS, _MAX_ROADGRAPH, _TIMESPAN
 from konductor.utilities.pbar import LivePbar
 from typing_extensions import Annotated
+
+# Match src/dataset/interaction.py
+_MAX_AGENTS: int = 64
+_MAX_ROADGRAPH: int = 1024
+_TIMESPAN: int = 40
 
 app = typer.Typer()
 

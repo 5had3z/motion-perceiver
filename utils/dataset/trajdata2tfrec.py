@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Instead of dealing with each different dataset and its edge
 cases (sanitation etc.), I can use trajdata to load batches,
@@ -45,7 +46,7 @@ def build_cache(name: str, root: Path):
         desired_data=list(data_dirs.keys()),
         rebuild_cache=True,
         rebuild_maps=True,
-        num_workers=cpu_count(),
+        num_workers=cpu_count() // 2,
         verbose=True,
         data_dirs=data_dirs,
     )
@@ -121,11 +122,11 @@ def make_tf_example(data: Dict[str, Tensor]) -> tf.train.Example:
             )
         elif v.dtype == torch.float32:
             cvt[k] = tf.train.Feature(
-                float_list=tf.train.FloatList(value=v.cpu().flatten().numpy())
+                float_list=tf.train.FloatList(value=v.flatten().numpy())
             )
         elif v.dtype == torch.int64:
             cvt[k] = tf.train.Feature(
-                int64_list=tf.train.Int64List(value=v.cpu().flatten().numpy())
+                int64_list=tf.train.Int64List(value=v.flatten().numpy())
             )
         else:
             raise NotImplementedError(f"Can't serialise {v.dtype}")
@@ -137,13 +138,12 @@ def process_batch_to_tfexample(
     batch: SceneBatch, max_agents: int
 ) -> List[tf.train.Example]:
     """"""
-    batch.to("cuda")
     all_time = torch.cat([batch.agent_hist, batch.agent_fut], dim=2)
     bsz, n_agent, duration = all_time.shape[:3]
     assert n_agent <= max_agents, f"{n_agent=} exceeds {max_agents=}"
 
     data = {
-        k: torch.full((bsz, max_agents, duration), torch.nan, device="cuda")
+        k: torch.full((bsz, max_agents, duration), torch.nan)
         for k in ["x", "y", "vx", "vy"]
     }
     for idx, k in enumerate(data):
@@ -158,7 +158,7 @@ def process_batch_to_tfexample(
     data["vt"] = torch.diff(data["t"], n=1, dim=-1)
     data["vt"] = torch.cat([data["vt"], data["vt"][..., [-1]]], dim=-1)
 
-    data["type"] = torch.zeros((bsz, max_agents), dtype=torch.int64, device="cuda")
+    data["type"] = torch.zeros((bsz, max_agents), dtype=torch.int64)
     data["type"][:, :n_agent] = batch.agent_type
     data["valid"] = torch.isfinite(data["x"]).to(torch.int64)
 
@@ -237,8 +237,7 @@ def make_tfrecords(
             dataset,
             batch_size=16,
             collate_fn=dataset.get_collate_fn(),
-            num_workers=cpu_count() // 2,
-            shuffle=True,
+            num_workers=0,
         )
 
         tfrecord_file = dest / f"{name}_{split}.tfrecord"

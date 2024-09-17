@@ -141,6 +141,9 @@ def pedestrian_pipe(
         data_out.append(data_vxvy)
     if "vel_yaw" in cfg.vehicle_features:
         data_out.append(data_vt)
+    if all(k in cfg.vehicle_features for k in ["width", "length"]):
+        assert hasattr(cfg, "fake_size"), "fake_size needs to be set"
+        data_out.append(fn.full_like(data_xy, cfg.fake_size))
     if "class" in cfg.vehicle_features:
         # Create class vector
         data_class = fn.cast(inputs["type"], dtype=DALIDataType.FLOAT)

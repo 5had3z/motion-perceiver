@@ -20,14 +20,6 @@ from nvidia.dali.data_node import DataNode
 from nvidia.dali.types import Constant, DALIDataType
 from torch.distributed import scatter_object_list
 
-# fmt: off
-ALL_FEATURES = [
-    "x", "y", "bbox_yaw",
-    "velocity_x", "velocity_y", "vel_yaw",
-    "width", "length", "class"
-]
-# fmt: on
-
 VALID_AUG = {"random_rotate"}
 
 
@@ -44,8 +36,16 @@ class MotionDatasetConfig(DatasetConfig):
 
     occupancy_size: int = field(kw_only=True)
     full_sequence: bool = False
+    # fmt: off
     # Vehicle_features is order sensitive (this is ordering of channel concatenation)
-    vehicle_features: List[str] = field(default_factory=lambda: ALL_FEATURES)
+    vehicle_features: List[str] = field(
+        default_factory=lambda: [
+            "x", "y", "bbox_yaw",
+            "velocity_x", "velocity_y", "vel_yaw",
+            "width", "length", "class",
+        ]
+    )
+    # fmt: on
     roadmap: bool = False
     map_normalize: float = 0.0
     heatmap_time: List[int] = field(kw_only=True)

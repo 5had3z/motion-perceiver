@@ -12,19 +12,20 @@ from konductor.data import DATASET_REGISTRY, Split
 from .common import MotionDatasetConfig
 from .pedestrain_pipe import pedestrian_pipe
 
-# fmt: off
-_ALL_FEATURES =  [
-    "x", "y", "bbox_yaw",
-    "velocity_x", "velocity_y",
-    "vel_yaw", "class",
-]
-# fmt: on
-
 
 @dataclass
 @DATASET_REGISTRY.register_module("sdd")
 class SDDDatasetConfig(MotionDatasetConfig):
-    vehicle_features: List[str] = field(default_factory=lambda: _ALL_FEATURES)
+    # fmt: off
+    # Default included features are different as raw dataset missing bbox size
+    vehicle_features: List[str] = field(
+        default_factory=lambda: [
+            "x", "y", "bbox_yaw", "velocity_x", "velocity_y", "vel_yaw", "class"
+        ]
+    )
+    # fmt: on
+    # Add fake width and length in meters before class, or append
+    fake_size: float | None = None
 
     def __post_init__(self):
         self.basepath /= "sdd_tfrecord"
@@ -38,6 +39,14 @@ class SDDDatasetConfig(MotionDatasetConfig):
             + 1
         )
         self.current_time_idx = ceil(metadata["history_sec"] / metadata["period_sec"])
+
+        if self.fake_size is not None:
+            try:
+                idx = self.vehicle_features.index("class")
+                self.vehicle_features.insert(idx, "width")
+                self.vehicle_features.insert(idx + 1, "length")
+            except ValueError:
+                self.vehicle_features.extend(["width", "length"])
 
         return super().__post_init__()
 
