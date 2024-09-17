@@ -28,7 +28,6 @@ class SDDDatasetConfig(MotionDatasetConfig):
     fake_size: float | None = None
 
     def __post_init__(self):
-        self.basepath /= "sdd_tfrecord"
         with open(self.basepath / "metadata.yaml", "r", encoding="utf-8") as f:
             metadata = yaml.safe_load(f)
         assert metadata["dataset"] == "sdd"
