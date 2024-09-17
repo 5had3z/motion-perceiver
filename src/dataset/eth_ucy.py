@@ -24,7 +24,6 @@ class ETHUCYDatasetConfig(MotionDatasetConfig):
 
     def __post_init__(self):
         super().__post_init__()
-        self.basepath /= "eth_ucy_tfrecord"
         with open(self.basepath / "metadata.yaml", "r", encoding="utf-8") as f:
             metadata = yaml.safe_load(f)
         self.subsets = metadata["subsets"]
