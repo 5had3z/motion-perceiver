@@ -2,13 +2,14 @@
 Extra utilities for calculating the maximum map size and 
 the percentage of vehicles in the scene occluded
 """
+
 from typing import Dict
 
 import numpy as np
 import torch
-from tqdm.auto import tqdm
-from torch import Tensor
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
+from torch import Tensor
+from tqdm.auto import tqdm
 
 
 def check_maximum_map_size(dataloaders: Dict[str, DALIGenericIterator]) -> None:

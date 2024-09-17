@@ -2,7 +2,8 @@
 
 import dash
 from konductor.webserver.app import cliapp
-from utils import plotly_timeseries, plotly_pretrain_graph, plotly_timeseries_v2
+
+from utils import plotly_pretrain_graph, plotly_timeseries, plotly_timeseries_v2
 
 dash.register_page(
     "Timeseries", path="/timeseries-performance", layout=plotly_timeseries.layout

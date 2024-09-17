@@ -12,7 +12,7 @@ target_compile_options(
 target_link_directories(roadgraph PRIVATE ${DALI_LIB_DIR})
 
 target_include_directories(
-  roadgraph PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR}
-                    ${OpenCV_INCLUDE_DIRS})
+  roadgraph SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR}
+                           ${OpenCV_INCLUDE_DIRS})
 
 target_link_libraries(roadgraph dali ${OpenCV_LIBS})

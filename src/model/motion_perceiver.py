@@ -24,19 +24,19 @@ from ._iadapter import (
     ImageIA,
     InputAdapter,
     RasterEncoder,
+    ResNet8Encoder,
     SignalIA,
     TrafficIA,
-    ResNet8Encoder,
 )
 from ._oadapter import (
     ClassHeatmapOA,
     ClassificationOA,
     HeatmapOA,
+    OccupancyFlow2OA,
     OccupancyFlowOA,
     OccupancyFlowRefinePre,
     OccupancyRefinePost,
     OccupancyRefinePre,
-    OccupancyFlow2OA,
 )
 
 

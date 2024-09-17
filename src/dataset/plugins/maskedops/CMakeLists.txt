@@ -9,7 +9,7 @@ target_compile_options(
 
 target_link_directories(maskedops PRIVATE ${DALI_LIB_DIR})
 
-target_include_directories(maskedops PRIVATE ${CUDAToolkit_INCLUDE_DIRS}
-                                             ${DALI_INCLUDE_DIR})
+target_include_directories(maskedops SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS}
+                                                    ${DALI_INCLUDE_DIR})
 
 target_link_libraries(maskedops dali)

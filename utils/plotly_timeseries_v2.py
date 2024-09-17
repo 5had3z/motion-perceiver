@@ -1,10 +1,10 @@
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-import re
 
-import numpy as np
 import dash_bootstrap_components as dbc
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from dash import Input, Output, callback, dash_table, dcc, html

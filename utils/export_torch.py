@@ -1,15 +1,16 @@
-from typing import Dict, Set
-from pathlib import Path
 import gc
+from pathlib import Path
+from typing import Dict, Set
 
 import numpy as np
 import torch
-from torch import Tensor
-from nvidia.dali.plugin.pytorch import DALIGenericIterator
-from konductor.utilities.pbar import LivePbar
 from konductor.metadata.perflogger import PerfLogger
+from konductor.utilities.pbar import LivePbar
+from nvidia.dali.plugin.pytorch import DALIGenericIterator
+from torch import Tensor
 
 from src.model.motion_perceiver import MotionPerceiver
+
 from .eval_common import yield_filtered_batch
 
 

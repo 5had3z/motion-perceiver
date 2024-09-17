@@ -9,7 +9,7 @@ target_compile_options(
 
 target_link_directories(dali_random PRIVATE ${DALI_LIB_DIR})
 
-target_include_directories(dali_random PRIVATE ${CUDAToolkit_INCLUDE_DIRS}
-                                               ${DALI_INCLUDE_DIR})
+target_include_directories(
+  dali_random SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR})
 
 target_link_libraries(dali_random dali)

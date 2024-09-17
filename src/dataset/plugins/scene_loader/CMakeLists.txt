@@ -13,7 +13,7 @@ target_compile_options(
 
 target_link_directories(scene_loader PRIVATE ${DALI_LIB_DIR})
 
-target_include_directories(scene_loader PRIVATE ${CUDAToolkit_INCLUDE_DIRS}
-                                                ${DALI_INCLUDE_DIR})
+target_include_directories(
+  scene_loader SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR})
 
 target_link_libraries(scene_loader dali yaml-cpp)

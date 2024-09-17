@@ -1,14 +1,14 @@
 """Input adapters for Perciever IO
 """
 
-import math
 import enum
-from typing import Dict, List, Tuple, Sequence
 import logging
+import math
+from typing import Dict, List, Sequence, Tuple
 
 import einops
 import torch
-from torch import nn, Tensor
+from torch import Tensor, nn
 from torchvision.models.resnet import BasicBlock, conv1x1
 
 
@@ -528,13 +528,16 @@ class RasterEncoder(InputAdapter):
 class ResNet8(nn.Module):
     """Basic ResNet-8 Implementation"""
 
-    def __init__(self, in_ch: int = 3, base_ch: int = 32) -> None:
+    def __init__(
+        self, in_ch: int = 3, base_ch: int = 32, num_classes: int = 1000
+    ) -> None:
         super().__init__()
 
         self.in_bottleneck = nn.Sequential(
             nn.Conv2d(in_ch, base_ch, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(base_ch),
             nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
         )
 
         self.layer1 = self._make_layer(base_ch, base_ch * 2, stride=1)
@@ -544,6 +547,8 @@ class ResNet8(nn.Module):
         self.layer3 = self._make_layer(
             self.layer2.conv2.out_channels, base_ch * 4, stride=2
         )
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512 * BasicBlock.expansion, num_classes)
 
     @property
     def out_channels(self) -> int:

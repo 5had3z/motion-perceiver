@@ -10,7 +10,7 @@ target_compile_options(
 target_link_directories(stride PRIVATE ${DALI_LIB_DIR})
 
 target_include_directories(
-  stride PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR}
-                 ${OpenCV_INCLUDE_DIRS})
+  stride SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR}
+                        ${OpenCV_INCLUDE_DIRS})
 
 target_link_libraries(stride dali)

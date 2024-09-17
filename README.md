@@ -47,6 +47,18 @@ You just need to download the waymo training shards. You can set environment var
 DATAPATH=/path/to/dataset PRETRAINED_ROOT=/path/to/pretrained python3 train.py --config_file cfg/waymo_two_phase.yml --workspace ./checkpoints --workers 4 --epoch 75 --pbar
 ```
 
+### Dataset Plugins
+
+You will need OpenCV, TBB and gcc-13. To build the dataloader plugins, you can either invoke cmake manually, or use the VSCode CMake Extension. When using the VSCode Extension, you can specify a different python executable in `settings.json`, this is helpful if your main environment is in a venv or something.
+
+```json
+{
+    "cmake.configureArgs": [
+        "-DPython3_EXECUTABLE=${userHome}/.venv/bin/python"
+    ]
+}
+```
+
 ## Testing + Tools
 
 ### Make Videos

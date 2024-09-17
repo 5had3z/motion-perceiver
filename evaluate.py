@@ -46,7 +46,7 @@ def generate(
     """
     from konductor.init import ExperimentInitConfig
 
-    from utils.eval_common import initialize, apply_eval_overrides
+    from utils.eval_common import apply_eval_overrides, initialize
     from utils.export_torch import run_export
 
     exp_cfg = ExperimentInitConfig.from_run(run_path)
@@ -142,12 +142,12 @@ def torch_evaluate(
     batch_size: Annotated[int, typer.Option()] = 16,
 ):
     """Run evaluation with pytorch code"""
-    from konductor.metadata.loggers.pq_writer import ParquetLogger
-    from konductor.metadata import PerfLogger
     from konductor.init import ExperimentInitConfig
+    from konductor.metadata import PerfLogger
+    from konductor.metadata.loggers.pq_writer import ParquetLogger
 
     from src.statistics import Occupancy
-    from utils.eval_common import initialize, apply_eval_overrides
+    from utils.eval_common import apply_eval_overrides, initialize
     from utils.export_torch import run_eval
 
     exp_cfg = ExperimentInitConfig.from_run(run_path)

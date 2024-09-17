@@ -1,5 +1,6 @@
 """Dataset for the INTERACTION dataset that consists of folders of CSVs
 """
+
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -7,7 +8,7 @@ from typing import Any, Dict, List
 import numpy as np
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
-from konductor.data import DATASET_REGISTRY, Split, ModuleInitConfig
+from konductor.data import DATASET_REGISTRY, ModuleInitConfig, Split
 from nvidia.dali import fn, newaxis, pipeline_def
 from nvidia.dali.types import Constant, DALIDataType
 

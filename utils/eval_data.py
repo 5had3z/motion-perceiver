@@ -2,7 +2,7 @@ import itertools
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Iterable
+from typing import Dict, Iterable, List
 
 import numpy as np
 import pandas as pd

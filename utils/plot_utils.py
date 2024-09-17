@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 
 import pandas as pd
-from konductor.webserver.utils import fill_experiments, Experiment
+from konductor.webserver.utils import Experiment, fill_experiments
 
 
 def data_by_time(exp: Experiment, split: str, key: str) -> pd.Series:

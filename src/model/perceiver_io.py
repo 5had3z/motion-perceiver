@@ -3,10 +3,9 @@
 from pathlib import Path
 from typing import Dict
 
-
-import torch
-from torch import nn, Tensor
 import einops
+import torch
+from torch import Tensor, nn
 
 from ._iadapter import (
     InputAdapter,

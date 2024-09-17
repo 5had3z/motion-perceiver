@@ -1,24 +1,24 @@
-from copy import deepcopy
-from dataclasses import dataclass, asdict, field
-from typing import Any, Dict, List, Tuple, Literal
-from pathlib import Path
-from math import pi
-from subprocess import run
-from multiprocessing import Pool, cpu_count
 import logging
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
+from math import pi
+from multiprocessing import Pool, cpu_count
+from pathlib import Path
+from subprocess import run
+from typing import Any, Dict, List, Literal, Tuple
 
-from torch.distributed import scatter_object_list
-from nvidia.dali import fn
-from nvidia.dali.data_node import DataNode
-from nvidia.dali.types import DALIDataType, Constant
 from konductor.data import DatasetConfig
 from konductor.data.dali import DaliLoaderConfig
 from konductor.utilities.comm import (
     get_local_rank,
-    synchronize,
-    in_distributed_mode,
     get_world_size,
+    in_distributed_mode,
+    synchronize,
 )
+from nvidia.dali import fn
+from nvidia.dali.data_node import DataNode
+from nvidia.dali.types import Constant, DALIDataType
+from torch.distributed import scatter_object_list
 
 # fmt: off
 ALL_FEATURES = [

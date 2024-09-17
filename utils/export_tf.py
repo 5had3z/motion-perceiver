@@ -1,29 +1,29 @@
-from pathlib import Path
-import subprocess
-from copy import deepcopy
-from typing import Callable, Dict, List
 import os
+import subprocess
 import zlib
+from copy import deepcopy
 from math import ceil
+from pathlib import Path
+from typing import Callable, Dict, List
 
-from tqdm.auto import tqdm
 import numpy as np
 import tensorflow as tf
-from matplotlib import pyplot as plt
 from google.protobuf import text_format
-from waymo_open_dataset.utils.occupancy_flow_grids import (
-    WaypointGrids,
-    _WaypointGridsOneType,
-)
+from matplotlib import pyplot as plt
+from tqdm.auto import tqdm
 from waymo_open_dataset.protos import occupancy_flow_submission_pb2
+from waymo_open_dataset.protos.occupancy_flow_metrics_pb2 import (
+    OccupancyFlowMetrics,
+    OccupancyFlowTaskConfig,
+)
 from waymo_open_dataset.utils import (
     occupancy_flow_data,
     occupancy_flow_grids,
     occupancy_flow_metrics,
 )
-from waymo_open_dataset.protos.occupancy_flow_metrics_pb2 import (
-    OccupancyFlowTaskConfig,
-    OccupancyFlowMetrics,
+from waymo_open_dataset.utils.occupancy_flow_grids import (
+    WaypointGrids,
+    _WaypointGridsOneType,
 )
 
 from .eval_data import MetricData

@@ -2,22 +2,22 @@
 
 """Show the output of the dataloader
 to validate its doing the right thing"""
-from typing import Dict
-from pathlib import Path
 import os
+from pathlib import Path
+from typing import Dict
 
-from torch import Tensor, inference_mode
 from konductor.data import ModuleInitConfig, Split
 from konductor.data.dali import DaliLoaderConfig
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
+from torch import Tensor, inference_mode
 
-from src.dataset.common import MotionDatasetConfig
-from src.dataset.interaction import InteractionConfig
-from src.dataset.waymo import WaymoDatasetConfig
-from src.dataset.eth_ucy import ETHUCYDatasetConfig
-from src.dataset.sdd import SDDDatasetConfig
-import src.dataset.visualisation as dv
 import src.dataset.utils as du
+import src.dataset.visualisation as dv
+from src.dataset.common import MotionDatasetConfig
+from src.dataset.eth_ucy import ETHUCYDatasetConfig
+from src.dataset.interaction import InteractionConfig
+from src.dataset.sdd import SDDDatasetConfig
+from src.dataset.waymo import WaymoDatasetConfig
 from utils.visual import reverse_image_transforms
 
 
@@ -50,7 +50,7 @@ def run_viz(loader: DALIGenericIterator, config: MotionDatasetConfig) -> None:
 @inference_mode()
 def main():
     batch_size = 8
-    datacfg = WaymoDatasetConfig(
+    datacfg = InteractionConfig(
         train_loader=DaliLoaderConfig(batch_size=batch_size),
         val_loader=DaliLoaderConfig(
             batch_size=batch_size,
@@ -65,7 +65,7 @@ def main():
         roadmap=True,
         # use_sdc_frame=True,
         # waymo_eval_frame=True,
-        heatmap_time=list(range(0, 77 // 2)),
+        heatmap_time=list(range(0, 40)),
         # random_heatmap_count=0,
         # random_heatmap_minmax=(0, 60),
         # signal_features=True,
@@ -73,7 +73,7 @@ def main():
         # only_vehicles=True,
         # flow_mask=True,
         # velocity_norm=4.0,
-        time_stride=2,
+        time_stride=1,
     )
     dataloader: DALIGenericIterator = datacfg.get_dataloader(Split.VAL)
     run_viz(dataloader, datacfg)

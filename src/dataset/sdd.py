@@ -1,12 +1,13 @@
 """
 Stanford drone dataset
 """
-from math import ceil
+
 from dataclasses import dataclass, field
+from math import ceil
 from typing import List
 
-from konductor.data import DATASET_REGISTRY, Split
 import yaml
+from konductor.data import DATASET_REGISTRY, Split
 
 from .common import MotionDatasetConfig
 from .pedestrain_pipe import pedestrian_pipe

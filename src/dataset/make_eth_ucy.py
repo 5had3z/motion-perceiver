@@ -8,18 +8,19 @@ direction of velocity will inform heading as most people walk the way they face.
 Data should be sourced from here (inline with nvlabs/trajdata):
 https://github.com/StanfordASL/Trajectron-plus-plus/tree/master/experiments/pedestrians/raw/raw/all_data
 """
+
 from pathlib import Path
 from typing import List, Optional
-from typing_extensions import Annotated
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 import typer
+from typing_extensions import Annotated
 
 app = typer.Typer()
 
-from src.dataset.eth_ucy import SEQUENCE_LENGTH, SUBSETS, MAX_AGENTS
+from src.dataset.eth_ucy import MAX_AGENTS, SEQUENCE_LENGTH, SUBSETS
 
 TXT2RECORD = {
     "biwi_eth": "eth",

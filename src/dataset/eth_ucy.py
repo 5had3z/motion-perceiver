@@ -2,7 +2,7 @@
 Conglomoration of ETH and UCY pedestrain datasets into a set of tfrecords.
 """
 
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict
 
 from konductor.data import DATASET_REGISTRY, Split

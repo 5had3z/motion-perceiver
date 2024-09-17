@@ -13,7 +13,7 @@ target_compile_options(
 target_link_directories(maskfrompoly PRIVATE ${DALI_LIB_DIR})
 
 target_include_directories(
-  maskfrompoly PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR}
-                       ${OpenCV_INCLUDE_DIRS})
+  maskfrompoly SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${DALI_INCLUDE_DIR}
+                              ${OpenCV_INCLUDE_DIRS})
 
 target_link_libraries(maskfrompoly dali ${OpenCV_LIBS})

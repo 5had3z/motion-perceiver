@@ -1,12 +1,12 @@
+import sqlite3
 from pathlib import Path
 from typing import List
-import sqlite3
 
-import pandas as pd
-from dash import html, dcc, Input, Output, callback, dash_table
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
+import pandas as pd
 import plotly.graph_objects as go
+from dash import Input, Output, callback, dash_table, dcc, html
+from dash.exceptions import PreventUpdate
 from konductor.webserver.utils import Experiment, fill_experiments
 
 from .plot_utils import gather_experiment_time_performance

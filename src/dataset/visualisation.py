@@ -4,8 +4,8 @@ from typing import Dict
 import cv2
 import numpy as np
 import torch
-from torch import Tensor
 from matplotlib import pyplot as plt
+from torch import Tensor
 from torchvision.utils import flow_to_image
 
 

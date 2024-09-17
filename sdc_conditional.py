@@ -2,17 +2,17 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
-from typing_extensions import Annotated
 
-import typer
 import torch
-from torch import Tensor
-from konductor.data import get_dataset_config, Split
+import typer
+from konductor.data import Split, get_dataset_config
 from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar
+from torch import Tensor
+from typing_extensions import Annotated
 
-from src.model import MotionPerceiver
 from src.dataset.waymo import WaymoDatasetConfig
+from src.model import MotionPerceiver
 from utils.eval_common import load_model, scenairo_id_tensor_2_str
 from utils.visual import write_occupancy_video
 

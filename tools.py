@@ -21,7 +21,7 @@ from typing_extensions import Annotated
 from src.dataset.common import MotionDatasetConfig
 from src.model import MotionPerceiver
 from src.model.motion_perceiver import MotionEncoder2Phase
-from utils.eval_common import initialize, scenairo_id_tensor_2_str, apply_eval_overrides
+from utils.eval_common import apply_eval_overrides, initialize, scenairo_id_tensor_2_str
 from utils.visual import (
     reverse_image_transforms,
     write_flow_video,

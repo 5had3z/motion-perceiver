@@ -1,5 +1,5 @@
-from torch import nn
 from konductor.optimizers._pytorch import PG_REGISTRY
+from torch import nn
 
 
 @PG_REGISTRY.register_module("scale-non-flow")

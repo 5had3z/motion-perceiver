@@ -1,9 +1,10 @@
 """ 
 General AP Statistics for Occupancy Heatmap
 """
+
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Dict, List, Tuple, Callable
+from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 import torch

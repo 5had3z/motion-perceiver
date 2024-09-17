@@ -1,10 +1,10 @@
 """Helper script to take a waymo-open-motion record and place into its own file"""
+
 from pathlib import Path
 
 import tensorflow as tf
 import typer
 from typing_extensions import Annotated
-
 from waymo_open_dataset.utils.occupancy_flow_data import parse_tf_example
 
 app = typer.Typer()

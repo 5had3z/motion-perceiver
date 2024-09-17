@@ -1,25 +1,24 @@
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import math
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
-from nvidia.dali import fn
-from nvidia.dali.pipeline import pipeline_def
-from nvidia.dali.data_node import newaxis
-from nvidia.dali.types import DALIDataType, Constant
 import nvidia.dali.math as dmath
 import nvidia.dali.tfrecord as tfrec
-from konductor.data import DATASET_REGISTRY, Split, ModuleInitConfig
+from konductor.data import DATASET_REGISTRY, ModuleInitConfig, Split
+from nvidia.dali import fn
+from nvidia.dali.data_node import newaxis
+from nvidia.dali.pipeline import pipeline_def
+from nvidia.dali.types import Constant, DALIDataType
 
 from .common import (
-    get_tfrecord_cache,
-    MotionDatasetConfig,
-    get_sample_idxs,
     VALID_AUG,
+    MotionDatasetConfig,
     dali_rad2deg,
+    get_sample_idxs,
+    get_tfrecord_cache,
 )
-
 
 _TIME_KEYS = ["past", "current", "future"]
 

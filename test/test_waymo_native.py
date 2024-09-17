@@ -1,4 +1,5 @@
 """Test to check for parity with native waymo-open-motion data"""
+
 from pathlib import Path
 
 import numpy as np
@@ -8,8 +9,8 @@ from konductor.data.dali import DaliLoaderConfig
 from waymo_open_dataset.utils import occupancy_flow_data, occupancy_flow_grids
 
 from src.dataset.waymo import WaymoDatasetConfig, waymo_motion_pipe
-from utils.export_tf import get_waymo_task_config
 from utils.eval_common import scenairo_id_tensor_2_str
+from utils.export_tf import get_waymo_task_config
 
 loadpath = Path(__file__).parent / "waymo-sample.tfrecord"
 assert loadpath.exists()

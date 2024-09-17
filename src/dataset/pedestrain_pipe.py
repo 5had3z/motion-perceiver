@@ -2,25 +2,25 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from konductor.init import ModuleInitConfig
-from nvidia.dali import pipeline_def, fn, newaxis
-from nvidia.dali.types import Constant, DALIDataType, DALIInterpType
-import nvidia.dali.tfrecord as tfrec
 import nvidia.dali.math as dmath
+import nvidia.dali.tfrecord as tfrec
+from konductor.init import ModuleInitConfig
+from nvidia.dali import fn, newaxis, pipeline_def
+from nvidia.dali.types import Constant, DALIDataType, DALIInterpType
 
 try:
     from .common import (
         MotionDatasetConfig,
-        get_tfrecord_cache,
-        get_sample_idxs,
         dali_rad2deg,
+        get_sample_idxs,
+        get_tfrecord_cache,
     )
 except ImportError:
     from common import (
         MotionDatasetConfig,
-        get_tfrecord_cache,
-        get_sample_idxs,
         dali_rad2deg,
+        get_sample_idxs,
+        get_tfrecord_cache,
     )
 
 

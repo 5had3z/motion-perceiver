@@ -1,5 +1,6 @@
 """Loss function and utilities for occupancy prediction for heatmap
 """
+
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
