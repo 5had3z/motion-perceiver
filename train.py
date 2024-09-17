@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import typer
 import yaml
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from konductor.init import ExperimentInitConfig, ModuleInitConfig
 from konductor.metadata import DataManager, Statistic
 from konductor.trainer.pytorch import (
@@ -90,6 +91,10 @@ class ImageNetTrainer(PyTorchTrainer):
         losses = {}
         for criterion in self.modules.criterion:
             losses.update(criterion(pred, data["label"][:, 0]))
+
+        if isinstance(self.modules.scheduler, ReduceLROnPlateau):
+            self.plateau_loss.update(sum(losses.values()).item())
+
         return losses, {"pred": pred}
 
 
