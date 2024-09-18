@@ -4,6 +4,8 @@
 import enum
 import logging
 import math
+import os
+from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
 import einops
@@ -600,11 +602,21 @@ class ResNet8Encoder(InputAdapter):
         max_frequency: float | None = None,
         input_ch: int = 3,
         resnet_ch: int = 32,
+        pretrained: str | None = None,
     ):
         pos_enc_ch = len(avg_pool_shape) * (2 * num_frequency_bands)
         super().__init__(num_input_channels=feat_ch + pos_enc_ch)
 
         self.encoder = ResNet8(input_ch, resnet_ch, no_classify=True)
+        if pretrained is not None:
+            ckpt = torch.load(
+                Path(os.environ.get("PRETRAINED_ROOT", "/pretrained")) / pretrained,
+                weights_only=True,
+            )
+            if "model" in ckpt:
+                ckpt = ckpt["model"]
+            self.encoder.load_state_dict(ckpt)
+
         self.avg_pool = nn.AdaptiveAvgPool2d(avg_pool_shape)
         self.feat_conv = conv1x1(self.encoder.out_channels, feat_ch)
 
