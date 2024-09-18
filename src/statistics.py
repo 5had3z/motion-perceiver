@@ -313,8 +313,8 @@ class Classification(Statistic):
         self, prd: Dict[str, Tensor], tgt: Dict[str, Tensor]
     ) -> Dict[str, float]:
         _, pred_indices = torch.topk(prd["pred"], k=5, dim=-1)
-        top5 = torch.isin(tgt["label"], pred_indices, assume_unique=True)
-        top1 = tgt["label"] == torch.argmax(prd["pred"], dim=-1)
+        top5 = torch.sum(tgt["label"] == pred_indices, dim=-1)
+        top1 = tgt["label"].squeeze(-1) == torch.argmax(prd["pred"], dim=-1)
 
         return {
             "top1": torch.mean(top1, dtype=torch.float32).item(),
