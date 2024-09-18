@@ -348,5 +348,30 @@ def get_params(run_path: Path):
     print(f"# Learnable Parameters: {total_params}")
 
 
+@app.command()
+def video_to_sequence(
+    path: Annotated[Path, typer.Option()],
+    out: Annotated[Path, typer.Option()] = Path("sequence"),
+    stride: Annotated[int, typer.Option()] = 1,
+):
+    """
+    Convert video to a sequence of frames...better than taking a screenshot of a video.
+    `out` folder should not already exist, will error if it does.
+    """
+    video = cv2.VideoCapture(str(path))
+
+    out.mkdir()  # Error if output folder already exists, should be clean folder
+    frame_idx = 0
+
+    ok = video.isOpened()
+    while ok:
+        ok, frame = video.read()
+        if ok and frame_idx % stride == 0:
+            cv2.imwrite(str(out / f"{frame_idx}.png"), frame)
+        frame_idx += 1
+
+    video.release()
+
+
 if __name__ == "__main__":
     app()
