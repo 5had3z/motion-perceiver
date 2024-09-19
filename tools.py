@@ -15,6 +15,7 @@ import typer
 from konductor.data import DATASET_REGISTRY, Split, get_dataset_config
 from konductor.init import ExperimentInitConfig
 from konductor.utilities.pbar import LivePbar
+from matplotlib import pyplot as plt
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 from torch import Tensor
 from typing_extensions import Annotated
@@ -206,7 +207,9 @@ def visualise_output_attention(
     this to track objects over time and show that each latent variable
     represents a single agent"""
 
-    def attn_hook(module, inputs, outputs: Tuple[Tensor, Tensor]) -> None:
+    def attn_hook(
+        module, inputs: Tuple[Tensor, Tensor, Tensor], outputs: Tuple[Tensor, Tensor]
+    ) -> None:
         """Hook that grabs the attention map and writes to disk"""
         _, attn = outputs
 
@@ -227,6 +230,17 @@ def visualise_output_attention(
                 tfolder = bfolder / f"token_{tkn_idx}"
                 t_idx = len(list(tfolder.iterdir()))
                 cv2.imwrite(str(tfolder / f"{t_idx:02}.png"), img)
+
+            # Inputs = query, key, value where k,v will be latent state
+            # Latent is passed through layernorm, most values should be within
+            # [-2,2]. However there are some outliers which we will just clip
+            latent = (torch.clamp(inputs[1][bidx], -2, 2) + 2) * 0.25
+            cmap = plt.cm.plasma(latent.cpu())[..., :3]
+            cmap = (cmap * 255).astype(np.uint8)
+            lfolder = bfolder / "latent"
+            lfolder.mkdir(exist_ok=True)
+            t_idx = len(list(lfolder.iterdir()))
+            cv2.imwrite(str(lfolder / f"{t_idx:02}.png"), cmap)
 
         # np.savez_compressed(
         #     config.path / "attn",
