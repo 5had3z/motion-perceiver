@@ -2,6 +2,7 @@
 
 """Overrides model and dataloader params to generate the full video"""
 import inspect
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -236,10 +237,26 @@ def visualise_output_attention(
         "0"
     ].attention.attention.register_forward_hook(attn_hook)
 
-    for data in loader:
-        data = data[0]
-        model(**data)
-        break
+    (config.path / "output_attn").mkdir(exist_ok=True)
+
+    with LivePbar(total=config.n_videos // config.batch_size) as pbar:
+        for data in loader:
+            n_samples = pbar.n * config.batch_size
+            if n_samples >= config.n_videos:
+                break
+
+            data = data[0]
+            model(**data)
+
+            scenario_names = scenairo_id_tensor_2_str(data["scenario_id"])
+            for bidx, scenario_name in enumerate(scenario_names):
+                bfolder = config.path / f"sample_{bidx}"
+                target = config.path / "output_attn" / scenario_name
+                if target.exists():
+                    shutil.rmtree(target)
+                bfolder.rename(target)
+
+            pbar.update(1)
 
 
 def override_dataset(exp_cfg: ExperimentInitConfig, new_dataset: str):

@@ -617,6 +617,9 @@ class ResNet8Encoder(InputAdapter):
                 ckpt = ckpt["model"]
             self.encoder.load_state_dict(ckpt)
 
+        del self.encoder.avgpool
+        del self.encoder.fc
+
         self.avg_pool = nn.AdaptiveAvgPool2d(avg_pool_shape)
         self.feat_conv = conv1x1(self.encoder.out_channels, feat_ch)
 
