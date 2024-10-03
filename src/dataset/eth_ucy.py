@@ -8,11 +8,8 @@ from typing import Any, Dict
 import yaml
 from konductor.data import DATASET_REGISTRY, Split
 
-try:
-    from .common import MotionDatasetConfig
-    from .pedestrain_pipe import pedestrian_pipe
-except ImportError:
-    from common import MotionDatasetConfig
+from .common import MotionDatasetConfig
+from .pedestrain_pipe import pedestrian_pipe
 
 
 @dataclass

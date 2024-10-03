@@ -12,23 +12,13 @@ from konductor.data import DATASET_REGISTRY, ModuleInitConfig, Split
 from nvidia.dali import fn, newaxis, pipeline_def
 from nvidia.dali.types import Constant, DALIDataType
 
-try:
-    from .common import (
-        VALID_AUG,
-        MotionDatasetConfig,
-        dali_rad2deg,
-        get_sample_idxs,
-        get_tfrecord_cache,
-    )
-except ImportError:
-    from common import (
-        VALID_AUG,
-        MotionDatasetConfig,
-        dali_rad2deg,
-        get_sample_idxs,
-        get_tfrecord_cache,
-    )
-
+from .common import (
+    VALID_AUG,
+    MotionDatasetConfig,
+    dali_rad2deg,
+    get_sample_idxs,
+    get_tfrecord_cache,
+)
 
 # Match make_interaction.py
 _MAX_AGENTS: int = 64
