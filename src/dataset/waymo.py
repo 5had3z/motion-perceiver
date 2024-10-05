@@ -171,12 +171,10 @@ def waymo_motion_pipe(
     features_description.update(traffic_light_features)
     features_description["scenario/id"] = tfrec.FixedLenFeature([], tfrec.string, "")
 
-    tfrec_idxs = get_tfrecord_cache(
-        record_root, [r.name for r in record_root.glob("*.tfrecord*")]
-    )
-
+    records = sorted(record_root.glob("*.tfrecord*"))
+    tfrec_idxs = get_tfrecord_cache(record_root, [r.name for r in records])
     inputs = fn.readers.tfrecord(
-        path=[str(rec) for rec in record_root.glob("*.tfrecord*")],
+        path=[str(rec) for rec in records],
         index_path=tfrec_idxs,
         features=features_description,
         shard_id=shard_id,

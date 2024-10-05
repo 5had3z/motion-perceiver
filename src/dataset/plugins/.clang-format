@@ -73,7 +73,7 @@ SpacesInCStyleCastParentheses: false
 SpacesInContainerLiterals: true
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard: Cpp17
+Standard: c++20
 TabWidth: 4
 UseTab: Never
 FixNamespaceComments: true
