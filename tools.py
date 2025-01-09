@@ -199,6 +199,9 @@ def generate_videos(
             pbar.update(1)
 
 
+_PREV_LATENT = torch.empty(0)
+
+
 def visualise_output_attention(
     model: MotionPerceiver, loader: DALIGenericIterator, config: EvalConfig
 ):
@@ -239,8 +242,24 @@ def visualise_output_attention(
             cmap = (cmap * 255).astype(np.uint8)
             lfolder = bfolder / "latent"
             lfolder.mkdir(exist_ok=True)
-            t_idx = len(list(lfolder.iterdir()))
+            t_idx = len(list(filter(lambda f: f.suffix == ".png", lfolder.iterdir())))
             cv2.imwrite(str(lfolder / f"{t_idx:02}.png"), cmap)
+
+            global _PREV_LATENT
+            lfolder = bfolder / "latent" / "diff"
+            lfolder.mkdir(exist_ok=True)
+            if t_idx > 0:
+                latent_diff = _PREV_LATENT - inputs[1][bidx]
+                ave = latent_diff.mean().item()
+                latent_diff = (latent_diff.clamp(-4, 4) + 4) * 0.125
+                cmap = plt.cm.plasma(latent_diff.cpu())[..., :3]
+                cmap = (cmap * 255).astype(np.uint8)
+                cv2.imwrite(
+                    str(lfolder / f"{t_idx-1:02}-{t_idx:02}-{ave:.4f}.png"), cmap
+                )
+            else:
+                _PREV_LATENT = torch.empty_like(inputs[1][bidx])
+            _PREV_LATENT.copy_(inputs[1][bidx])
 
         # np.savez_compressed(
         #     config.path / "attn",

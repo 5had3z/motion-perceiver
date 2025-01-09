@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import typer
 import yaml
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from konductor.init import ExperimentInitConfig, ModuleInitConfig
 from konductor.metadata import DataManager, Statistic
 from konductor.trainer.pytorch import (
@@ -19,8 +18,10 @@ from konductor.trainer.pytorch import (
 )
 from konductor.utilities import comm
 from konductor.utilities.pbar import PbarType, pbar_wrapper
+from konductor.utilities.profiler import make_default_profiler_kwargs, profile_function
 from torch import Tensor
-from torch.profiler import record_function
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.profiler import record_function, schedule
 from typing_extensions import Annotated
 
 import src  # Imports all components into framework
@@ -130,6 +131,7 @@ def main(
     pbar: Annotated[bool, typer.Option()] = False,
     brief: Annotated[Optional[str], typer.Option()] = None,
     remote: Annotated[Optional[Path], typer.Option()] = None,
+    profile: Annotated[bool, typer.Option()] = False,
 ) -> None:
     """Main entrypoint to training model"""
 
@@ -171,7 +173,13 @@ def main(
     else:
         trainer = Trainer(trainer_config, train_modules, data_manager)
 
-    trainer.train(epoch=epoch)
+    if profile:
+        prof_kwargs = make_default_profiler_kwargs(save_dir=data_manager.workspace)
+        prof_kwargs["schedule"] = schedule(wait=1, warmup=2, active=5, repeat=1)
+        profile_function(trainer._train, profile_kwargs=prof_kwargs)
+    else:
+        trainer.train(epoch=epoch)
+
     if isinstance(trainer.loss_monitor, AsyncFiniteMonitor):
         trainer.loss_monitor.stop()
 
